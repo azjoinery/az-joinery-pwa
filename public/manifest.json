@@ -1,0 +1,17 @@
+{
+  "name": "AZ Joinery",
+  "short_name": "AZ Joinery",
+  "description": "Custom joinery management system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#F58120",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "192x192",
+      "type": "image/x-icon"
+    }
+  ]
+}
