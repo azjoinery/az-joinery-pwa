@@ -1,10 +1,9 @@
-// Build cache fix
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    reactStrictMode: true,
-        compiler: {
+  reactStrictMode: true,
+  compiler: {
     removeConsole: process.env.NODE_ENV === "production",
-      },
+  },
 };
 
-export default nextConfig;
+module.exports = nextConfig;
