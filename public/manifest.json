@@ -1,0 +1,12 @@
+{
+  "name": "AZ Joinery PWA",
+  "short_name": "AZ Joinery",
+  "description": "Custom joinery management system",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1115",
+  "theme_color": "#f59e0b",
+  "icons": []
+}
