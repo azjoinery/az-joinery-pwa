@@ -1,13 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useJobs } from "@/lib/hooks/useJobs";
 import { Modal } from "./Modal";
 import { JobForm } from "./JobForm";
 import type { Job } from "@/lib/types/models";
 import styles from "./JobsList.module.css";
 
-export function JobsList() {
+interface JobsListProps {
+  showDetails?: boolean;
+}
+
+export function JobsList({ showDetails = true }: JobsListProps) {
+  const router = useRouter();
   const { jobs, loading, error, createJob, updateJob } = useJobs();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -53,7 +59,18 @@ export function JobsList() {
           <tbody>
             {jobs.map((job) => (
               <tr key={job.id} className={styles.row}>
-                <td className={styles.jobName}>{job.name}</td>
+                <td className={styles.jobName}>
+                  {showDetails ? (
+                    <button
+                      className={styles.jobLink}
+                      onClick={() => router.push(`/dashboards/manager/jobs/${job.id}`)}
+                    >
+                      {job.name}
+                    </button>
+                  ) : (
+                    job.name
+                  )}
+                </td>
                 <td>{job.client}</td>
                 <td>
                   <span className={`${styles.badge} ${styles[`status-${job.status}`]}`}>

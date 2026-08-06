@@ -81,6 +81,20 @@
   font-weight: 500;
 }
 
+.jobLink {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 0;
+}
+
+.jobLink:hover {
+  text-decoration: underline;
+}
+
 .badge {
   display: inline-block;
   padding: 0.25rem 0.75rem;
