@@ -1,11 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import { useJobs } from "@/lib/hooks/useJobs";
+import { Modal } from "./Modal";
+import { JobForm } from "./JobForm";
 import type { Job } from "@/lib/types/models";
 import styles from "./JobsList.module.css";
 
 export function JobsList() {
-  const { jobs, loading, error } = useJobs();
+  const { jobs, loading, error, createJob, updateJob } = useJobs();
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+
+  async function handleCreateJob(data: Omit<Job, "id" | "createdAt" | "updatedAt">) {
+    await createJob(data);
+    setIsCreateModalOpen(false);
+  }
+
+  async function handleUpdateJob(data: Omit<Job, "id" | "createdAt" | "updatedAt">) {
+    if (editingJob) {
+      await updateJob(editingJob.id, data);
+      setEditingJob(null);
+    }
+  }
 
   if (loading) return <div className={styles.loading}>Loading jobs...</div>;
   if (error) return <div className={styles.error}>Error: {error}</div>;
@@ -14,7 +31,9 @@ export function JobsList() {
     <div className={styles.container}>
       <div className={styles.header}>
         <h3>Jobs</h3>
-        <button className={styles.addButton}>+ New Job</button>
+        <button className={styles.addButton} onClick={() => setIsCreateModalOpen(true)}>
+          + New Job
+        </button>
       </div>
 
       {jobs.length === 0 ? (
@@ -48,14 +67,39 @@ export function JobsList() {
                 </td>
                 <td>{new Date(job.dueDate).toLocaleDateString()}</td>
                 <td className={styles.actions}>
-                  <button className={styles.actionBtn}>View</button>
-                  <button className={styles.actionBtn}>Edit</button>
+                  <button className={styles.actionBtn} onClick={() => setEditingJob(job)}>
+                    Edit
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      <Modal
+        isOpen={isCreateModalOpen}
+        title="Create New Job"
+        onClose={() => setIsCreateModalOpen(false)}
+        size="medium"
+      >
+        <JobForm onSubmit={handleCreateJob} onCancel={() => setIsCreateModalOpen(false)} />
+      </Modal>
+
+      <Modal
+        isOpen={editingJob !== null}
+        title="Edit Job"
+        onClose={() => setEditingJob(null)}
+        size="medium"
+      >
+        {editingJob && (
+          <JobForm
+            job={editingJob}
+            onSubmit={handleUpdateJob}
+            onCancel={() => setEditingJob(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

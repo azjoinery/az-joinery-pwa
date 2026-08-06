@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useTasks } from "@/lib/hooks/useTasks";
+import { Modal } from "./Modal";
+import { TaskForm } from "./TaskForm";
+import type { Task } from "@/lib/types/models";
 import styles from "./TasksList.module.css";
 
 interface TasksListProps {
@@ -8,7 +12,21 @@ interface TasksListProps {
 }
 
 export function TasksList({ jobId }: TasksListProps) {
-  const { tasks, loading, error } = useTasks(jobId);
+  const { tasks, loading, error, createTask, updateTask } = useTasks(jobId);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  async function handleCreateTask(data: Omit<Task, "id" | "createdAt" | "updatedAt">) {
+    await createTask(data);
+    setIsCreateModalOpen(false);
+  }
+
+  async function handleUpdateTask(data: Omit<Task, "id" | "createdAt" | "updatedAt">) {
+    if (editingTask) {
+      await updateTask(editingTask.id, data);
+      setEditingTask(null);
+    }
+  }
 
   if (loading) return <div className={styles.loading}>Loading tasks...</div>;
   if (error) return <div className={styles.error}>Error: {error}</div>;
@@ -17,7 +35,9 @@ export function TasksList({ jobId }: TasksListProps) {
     <div className={styles.container}>
       <div className={styles.header}>
         <h3>Tasks</h3>
-        <button className={styles.addButton}>+ New Task</button>
+        <button className={styles.addButton} onClick={() => setIsCreateModalOpen(true)}>
+          + New Task
+        </button>
       </div>
 
       {tasks.length === 0 ? (
@@ -51,14 +71,43 @@ export function TasksList({ jobId }: TasksListProps) {
                 <td>{task.assignedTo}</td>
                 <td>{new Date(task.dueDate).toLocaleDateString()}</td>
                 <td className={styles.actions}>
-                  <button className={styles.actionBtn}>Edit</button>
-                  <button className={styles.actionBtn}>Close</button>
+                  <button className={styles.actionBtn} onClick={() => setEditingTask(task)}>
+                    Edit
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      <Modal
+        isOpen={isCreateModalOpen}
+        title="Create New Task"
+        onClose={() => setIsCreateModalOpen(false)}
+        size="medium"
+      >
+        <TaskForm
+          jobId={jobId}
+          onSubmit={handleCreateTask}
+          onCancel={() => setIsCreateModalOpen(false)}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={editingTask !== null}
+        title="Edit Task"
+        onClose={() => setEditingTask(null)}
+        size="medium"
+      >
+        {editingTask && (
+          <TaskForm
+            task={editingTask}
+            onSubmit={handleUpdateTask}
+            onCancel={() => setEditingTask(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
