@@ -36,7 +36,7 @@ export default function LoginPage() {
       }
       setToken(token);
       sessionStorage.setItem("userRole", role);
-      router.push("/dashboard");
+      router.push("/dashboard-redirect");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign in failed.");
     } finally {
