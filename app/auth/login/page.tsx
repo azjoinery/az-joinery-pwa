@@ -10,10 +10,13 @@ interface LoginResponse {
   token?: string;
 }
 
+const ROLES = ["Admin", "Manager", "Staff", "Client"];
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("Staff");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -25,13 +28,14 @@ export default function LoginPage() {
     try {
       const result = await apiFetch<LoginResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email: email, password: password }),
+        body: JSON.stringify({ email: email, password: password, role: role }),
       });
       const token = result.access_token || result.token;
       if (!token) {
         throw new Error("No token returned by the API.");
       }
       setToken(token);
+      sessionStorage.setItem("userRole", role);
       router.push("/dashboard");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign in failed.");
@@ -71,6 +75,21 @@ export default function LoginPage() {
           }}
           required
         />
+        <p />
+        <label htmlFor="role">Role</label>
+        <select
+          id="role"
+          value={role}
+          onChange={function (event) {
+            setRole(event.target.value);
+          }}
+        >
+          {ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
         <p />
         <button type="submit" disabled={busy}>
           {busy ? "Signing in..." : "Sign in"}

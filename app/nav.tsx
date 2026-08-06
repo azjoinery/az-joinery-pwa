@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { clearToken } from "@/lib/api/client";
 
 const tabs = [
   { href: "/dashboard", label: "Dashboard" },
@@ -10,7 +11,14 @@ const tabs = [
 ];
 
 export default function Nav() {
+  const router = useRouter();
   const pathname = usePathname();
+
+  function handleLogout() {
+    clearToken();
+    sessionStorage.removeItem("userRole");
+    router.push("/auth/login");
+  }
 
   return (
     <nav className="app-footer">
@@ -23,6 +31,9 @@ export default function Nav() {
           {tab.label}
         </Link>
       ))}
+      <button onClick={handleLogout} className="tab logout">
+        Logout
+      </button>
     </nav>
   );
 }
