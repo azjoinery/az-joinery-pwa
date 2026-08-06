@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { Shell } from "@/lib/components/Shell";
 import { AuthLayout } from "@/lib/components/AuthLayout";
 import { ROLE_CONFIG, ROLES } from "@/lib/config/roles";
+import { ProductionLogForm } from "@/lib/components/ProductionLogForm";
+import { TasksList } from "@/lib/components/TasksList";
+import { JobsList } from "@/lib/components/JobsList";
 
 export default function InstallerDashboard() {
   const { user } = useAuth();
@@ -35,21 +38,23 @@ export default function InstallerDashboard() {
 }
 
 function LogTab() {
+  const { user } = useAuth();
   return (
     <section>
       <h1>Daily Work Log</h1>
       <p className="muted">Log your installation work and hours.</p>
-      <div className="notice">Work logging coming in Phase 1</div>
+      {user && <ProductionLogForm cabinetMakerId={user.id} />}
     </section>
   );
 }
 
 function TasksTab() {
+  const { user } = useAuth();
   return (
     <section>
       <h1>My Tasks</h1>
       <p className="muted">Installation tasks assigned to you.</p>
-      <div className="notice">Task management coming in Phase 1</div>
+      {user && <TasksList />}
     </section>
   );
 }
@@ -59,7 +64,7 @@ function JobsTab() {
     <section>
       <h1>My Jobs</h1>
       <p className="muted">Jobs assigned for installation.</p>
-      <div className="notice">Job tracking coming in Phase 1</div>
+      <JobsList />
     </section>
   );
 }

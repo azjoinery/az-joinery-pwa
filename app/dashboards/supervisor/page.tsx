@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { Shell } from "@/lib/components/Shell";
 import { AuthLayout } from "@/lib/components/AuthLayout";
 import { ROLE_CONFIG, ROLES } from "@/lib/config/roles";
+import { JobsList } from "@/lib/components/JobsList";
+import { TasksList } from "@/lib/components/TasksList";
+import { NotificationCenter } from "@/lib/components/NotificationCenter";
 
 export default function SupervisorDashboard() {
   const { user } = useAuth();
@@ -42,6 +45,10 @@ function SupervisorHome() {
     <section>
       <h1>Production Summary</h1>
       <p className="muted">Today's production status and team activity.</p>
+
+      <div style={{ marginBottom: "2rem" }}>
+        <NotificationCenter />
+      </div>
 
       <div className="grid-2">
         <div className="card">
@@ -88,7 +95,7 @@ function JobsTab() {
     <section>
       <h1>Active Jobs</h1>
       <p className="muted">Jobs currently in production.</p>
-      <div className="notice">Job tracking UI coming in Phase 1</div>
+      <JobsList />
     </section>
   );
 }

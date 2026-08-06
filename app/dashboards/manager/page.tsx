@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { Shell } from "@/lib/components/Shell";
 import { AuthLayout } from "@/lib/components/AuthLayout";
 import { ROLE_CONFIG, ROLES } from "@/lib/config/roles";
+import { JobsList } from "@/lib/components/JobsList";
+import { TasksList } from "@/lib/components/TasksList";
+import { NotificationCenter } from "@/lib/components/NotificationCenter";
 
 export default function ManagerDashboard() {
   const { user } = useAuth();
@@ -41,6 +44,10 @@ function ManagerHome() {
     <section>
       <h1>Business Overview</h1>
       <p className="muted">Key metrics and upcoming actions.</p>
+
+      <div style={{ marginBottom: "2rem" }}>
+        <NotificationCenter />
+      </div>
 
       <div className="grid-2">
         <div className="card">
@@ -97,7 +104,12 @@ function JobsTab() {
     <section>
       <h1>Job Management</h1>
       <p className="muted">Create, edit, and track all jobs.</p>
-      <div className="notice">Job management UI coming in Phase 1</div>
+      <div style={{ marginBottom: "2rem" }}>
+        <JobsList />
+      </div>
+      <div>
+        <TasksList />
+      </div>
     </section>
   );
 }
