@@ -70,7 +70,7 @@ export function JobForm({ job, onSubmit, onCancel }: JobFormProps) {
       <div className={styles.row}>
         <div className={styles.field}>
           <label htmlFor="status">Status *</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select value={status} onChange={(e) => setStatus(e.target.value as any)}>
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
             <option value="completed">Completed</option>
@@ -80,7 +80,7 @@ export function JobForm({ job, onSubmit, onCancel }: JobFormProps) {
 
         <div className={styles.field}>
           <label htmlFor="priority">Priority *</label>
-          <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <select value={priority} onChange={(e) => setPriority(e.target.value as any)}>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
