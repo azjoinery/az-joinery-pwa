@@ -66,7 +66,7 @@ function ExecutiveOverview() {
         api.get<{ grand: number; activeWorkers: number }>("/analytics/production?period=weekly"),
         api.get<{ status?: string }[]>("/flags"),
         api.get<{ status?: string }[]>("/reports"),
-        api.get<unknown[]>("/stock/items?lowOnly=true"),
+        api.get<unknown[]>("/stock/items?lowOnly=true&active=true"),
         api.get<{ outstanding: number }>("/accounts/dashboard"),
         api.get<{ confirmedSalesValue: number; activeLeads: number; quotesSent: number }>("/sales/dashboard"),
         api.get<{ inProgress: number; ready: number; overdue: number }>("/design/dashboard"),
