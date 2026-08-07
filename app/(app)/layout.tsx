@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
 import { navItemsForRole, isPathAllowedForRole, landingPageForRole } from "@/lib/roles";
+import NotificationBell from "@/lib/components/NotificationBell";
 
 export default function ProtectedLayout({
   children,
@@ -76,7 +77,8 @@ export default function ProtectedLayout({
             <h1 className="text-2xl font-bold text-gray-900">AZ Joinery</h1>
             <p className="text-sm text-gray-600">Welcome, {user.name}</p>
           </div>
-          <div className="text-right">
+          <div className="flex items-center gap-3">
+            <NotificationBell />
             <span className="inline-block px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
               {user.role.replace("_", " ").toUpperCase()}
             </span>
