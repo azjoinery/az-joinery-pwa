@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/store/auth";
+import { navItemsForRole, isPathAllowedForRole, landingPageForRole } from "@/lib/roles";
 
-export default function DashboardLayout({
+export default function ProtectedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, loading, me, logout } = useAuth();
 
   const handleLogout = async () => {
@@ -19,13 +21,26 @@ export default function DashboardLayout({
 
   useEffect(() => {
     me();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Not logged in — bounce to login.
   useEffect(() => {
     if (!loading && !user) {
       router.push("/auth/login");
     }
   }, [user, loading, router]);
+
+  // Logged in, but this role isn't allowed on this page (e.g. they typed
+  // the URL directly) — send them to their own landing page instead.
+  // This is a UX/routing convenience, not the security boundary: the API
+  // independently enforces what each role can actually see/do regardless
+  // of what page the frontend renders.
+  useEffect(() => {
+    if (!loading && user && !isPathAllowedForRole(pathname, user.role)) {
+      router.replace(landingPageForRole(user.role));
+    }
+  }, [user, loading, pathname, router]);
 
   if (loading) {
     return (
@@ -41,6 +56,13 @@ export default function DashboardLayout({
   if (!user) {
     return null;
   }
+
+  if (!isPathAllowedForRole(pathname, user.role)) {
+    // Redirect is in flight (see effect above) — render nothing in the meantime.
+    return null;
+  }
+
+  const navItems = navItemsForRole(user.role);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -62,18 +84,13 @@ export default function DashboardLayout({
       {/* Main Content */}
       <main className="max-w-7xl mx-auto">{children}</main>
 
-      {/* Footer Navigation - All 6 Phases */}
+      {/* Footer Navigation — items shown depend on the logged-in user's role */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
         <div className="overflow-x-auto">
           <div className="flex justify-start">
-            <NavLink href="/dashboard" label="Dashboard" icon="📊" />
-            <NavLink href="/jobs" label="Jobs" icon="📋" />
-            <NavLink href="/tasks" label="Tasks" icon="✓" />
-            <NavLink href="/inventory" label="Inventory" icon="📦" />
-            <NavLink href="/sales" label="Sales" icon="🎯" />
-            <NavLink href="/analytics" label="Analytics" icon="📈" />
-            <NavLink href="/invoices" label="Invoices" icon="💰" />
-            <NavLink href="/design" label="Design" icon="📐" />
+            {navItems.map((item) => (
+              <NavLink key={item.key} href={item.href} label={item.label} icon={item.icon} />
+            ))}
             <button
               onClick={handleLogout}
               className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"

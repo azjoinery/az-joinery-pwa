@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/store/auth";
+import { landingPageForRole } from "@/lib/roles";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,10 +13,10 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(email, password);
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 500);
+    const user = await login(email, password);
+    if (user) {
+      router.push(landingPageForRole(user.role));
+    }
   };
 
   return (

@@ -6,7 +6,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   me: () => Promise<void>;
 }
@@ -27,12 +27,16 @@ export const useAuth = create<AuthState>((set) => ({
         try {
           const user = await api.get<User>("/auth/me");
           set({ user });
+          return user;
         } catch (err) {
           set({ error: "Failed to fetch user data" });
+          return null;
         }
       }
+      return null;
     } catch (err: any) {
       set({ error: err.response?.data?.detail || "Login failed" });
+      return null;
     } finally {
       set({ loading: false });
     }
