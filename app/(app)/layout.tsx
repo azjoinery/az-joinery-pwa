@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
 import { navItemsForRole, isPathAllowedForRole, landingPageForRole } from "@/lib/roles";
 
@@ -12,7 +13,7 @@ export default function ProtectedLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loading, me, logout } = useAuth();
+  const { user, initialized, me, logout } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -24,12 +25,14 @@ export default function ProtectedLayout({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Not logged in — bounce to login.
+  // Wait until the initial session check has actually completed before
+  // deciding there's no user — otherwise every fresh page load briefly
+  // sees user=null and incorrectly bounces a logged-in user back to login.
   useEffect(() => {
-    if (!loading && !user) {
+    if (initialized && !user) {
       router.push("/auth/login");
     }
-  }, [user, loading, router]);
+  }, [user, initialized, router]);
 
   // Logged in, but this role isn't allowed on this page (e.g. they typed
   // the URL directly) — send them to their own landing page instead.
@@ -37,12 +40,12 @@ export default function ProtectedLayout({
   // independently enforces what each role can actually see/do regardless
   // of what page the frontend renders.
   useEffect(() => {
-    if (!loading && user && !isPathAllowedForRole(pathname, user.role)) {
+    if (initialized && user && !isPathAllowedForRole(pathname, user.role)) {
       router.replace(landingPageForRole(user.role));
     }
-  }, [user, loading, pathname, router]);
+  }, [user, initialized, pathname, router]);
 
-  if (loading) {
+  if (!initialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -110,12 +113,12 @@ export default function ProtectedLayout({
 
 function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
   return (
-    <a
+    <Link
       href={href}
       className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"
     >
       <div className="text-lg">{icon}</div>
       <div className="text-xs text-gray-700 font-medium">{label}</div>
-    </a>
+    </Link>
   );
 }
