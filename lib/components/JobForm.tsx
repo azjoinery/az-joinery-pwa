@@ -15,7 +15,7 @@ export function JobForm({ job, onSubmit, onCancel }: JobFormProps) {
   const [client, setClient] = useState(job?.client || "");
   const [status, setStatus] = useState(job?.status || "pending");
   const [priority, setPriority] = useState(job?.priority || "medium");
-  const [dueDate, setDueDate] = useState(job?.dueDate.split("T")[0] || "");
+  const [dueDate, setDueDate] = useState(job?.dueDate?.split("T")[0] || "");
   const [description, setDescription] = useState(job?.description || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

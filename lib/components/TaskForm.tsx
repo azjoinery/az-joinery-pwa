@@ -17,7 +17,7 @@ export function TaskForm({ task, jobId, onSubmit, onCancel }: TaskFormProps) {
   const [status, setStatus] = useState(task?.status || "pending");
   const [priority, setPriority] = useState(task?.priority || "medium");
   const [assignedTo, setAssignedTo] = useState(task?.assignedTo || "");
-  const [dueDate, setDueDate] = useState(task?.dueDate.split("T")[0] || "");
+  const [dueDate, setDueDate] = useState(task?.dueDate?.split("T")[0] || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
