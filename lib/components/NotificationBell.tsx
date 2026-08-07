@@ -147,12 +147,17 @@ export default function NotificationBell() {
     }
   };
 
-  const handleItemClick = (n: Notification) => {
-    if (!n.read) markRead(n.id);
+  const handleItemClick = async (n: Notification) => {
+    // Awaited deliberately: navigating away can remount this component (e.g.
+    // a role-based redirect if the link's target page isn't allowed for the
+    // current user), which re-fetches the unread count from the server. If
+    // that refetch wins a race against an in-flight PATCH, the badge would
+    // briefly show the old count. Waiting here closes that race.
+    if (!n.read) await markRead(n.id);
     const entityType = (n.link || "").split(":")[0] || n.category || n.kind || "";
     const dest = ENTITY_PAGE[entityType];
+    setOpen(false);
     if (dest) {
-      setOpen(false);
       router.push(dest);
     }
   };
