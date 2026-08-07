@@ -25,7 +25,7 @@ export const useAuth = create<AuthState>((set) => ({
         set({ loading: false });
         // Fetch user data
         try {
-          const user = await api.get<User>("/users/me");
+          const user = await api.get<User>("/auth/me");
           set({ user });
         } catch (err) {
           set({ error: "Failed to fetch user data" });
@@ -46,7 +46,7 @@ export const useAuth = create<AuthState>((set) => ({
   me: async () => {
     set({ loading: true });
     try {
-      const user = await api.get<User>("/users/me");
+      const user = await api.get<User>("/auth/me");
       set({ user, loading: false });
     } catch (err) {
       set({ user: null, loading: false });

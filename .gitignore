@@ -32,3 +32,6 @@ yarn-error.log*
 
 # Git
 .git/
+
+.vercel
+.env*

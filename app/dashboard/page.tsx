@@ -7,7 +7,6 @@ import { DailyEntry } from "@/lib/types";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [entry, setEntry] = useState<DailyEntry | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,7 +35,6 @@ export default function DashboardPage() {
       const today = new Date().toISOString().split("T")[0];
       const data = await api.get<DailyEntry>(`/entries/mine?date=${today}`);
       if (data) {
-        setEntry(data);
         setCounts(data.counts || {});
         setNote(data.note || "");
       }

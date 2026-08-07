@@ -57,13 +57,20 @@ export default function DashboardLayout({
       {/* Main Content */}
       <main className="max-w-7xl mx-auto">{children}</main>
 
-      {/* Footer Navigation */}
+      {/* Footer Navigation - All 6 Phases */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
-        <div className="flex justify-around">
-          <NavLink href="/dashboard" label="Dashboard" icon="📊" />
-          <NavLink href="/jobs" label="Jobs" icon="📋" />
-          <NavLink href="/tasks" label="Tasks" icon="✓" />
-          <NavLink href="/auth/login" label="Logout" icon="↪️" />
+        <div className="overflow-x-auto">
+          <div className="flex justify-start">
+            <NavLink href="/dashboard" label="Dashboard" icon="📊" />
+            <NavLink href="/jobs" label="Jobs" icon="📋" />
+            <NavLink href="/tasks" label="Tasks" icon="✓" />
+            <NavLink href="/inventory" label="Inventory" icon="📦" />
+            <NavLink href="/sales" label="Sales" icon="🎯" />
+            <NavLink href="/analytics" label="Analytics" icon="📈" />
+            <NavLink href="/invoices" label="Invoices" icon="💰" />
+            <NavLink href="/design" label="Design" icon="📐" />
+            <NavLink href="/auth/login" label="Logout" icon="↪️" />
+          </div>
         </div>
       </nav>
 
@@ -77,9 +84,9 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: str
   return (
     <a
       href={href}
-      className="flex-1 py-3 text-center hover:bg-gray-50 active:bg-orange-50 transition-colors"
+      className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"
     >
-      <div className="text-2xl">{icon}</div>
+      <div className="text-lg">{icon}</div>
       <div className="text-xs text-gray-700 font-medium">{label}</div>
     </a>
   );

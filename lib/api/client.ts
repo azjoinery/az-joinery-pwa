@@ -26,7 +26,10 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
-        if (error.response?.status === 401) {
+        const isLoginRequest = error.config?.url?.includes("/auth/login");
+        // Only treat 401 as "session expired" if it wasn't the login attempt itself.
+        // Otherwise a wrong password would force-redirect before the error can be shown.
+        if (error.response?.status === 401 && !isLoginRequest) {
           localStorage.removeItem("token");
           window.location.href = "/auth/login";
         }
