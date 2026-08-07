@@ -136,7 +136,7 @@ export const ROLE_CONFIG: Record<Role, RoleConfig> = {
 };
 
 export function getRoleConfig(role?: string): RoleConfig {
-  if (!role || !role in ROLE_CONFIG) {
+  if (!role || !(role in ROLE_CONFIG)) {
     return ROLE_CONFIG[ROLES.CABINETMAKER];
   }
   return ROLE_CONFIG[role as Role];
