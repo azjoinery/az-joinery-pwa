@@ -10,7 +10,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, loading, me } = useAuth();
+  const { user, loading, me, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/auth/login");
+  };
 
   useEffect(() => {
     me();
@@ -69,7 +74,13 @@ export default function DashboardLayout({
             <NavLink href="/analytics" label="Analytics" icon="📈" />
             <NavLink href="/invoices" label="Invoices" icon="💰" />
             <NavLink href="/design" label="Design" icon="📐" />
-            <NavLink href="/auth/login" label="Logout" icon="↪️" />
+            <button
+              onClick={handleLogout}
+              className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"
+            >
+              <div className="text-lg">↪️</div>
+              <div className="text-xs text-gray-700 font-medium">Logout</div>
+            </button>
           </div>
         </div>
       </nav>

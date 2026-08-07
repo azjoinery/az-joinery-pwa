@@ -57,6 +57,8 @@ export default function SalesPage() {
     projectName: "",
     estimatedValue: 0,
   });
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     loadLeads();
@@ -65,7 +67,7 @@ export default function SalesPage() {
   const loadLeads = async () => {
     setLoading(true);
     try {
-      const data = await api.get<Lead[]>("/leads");
+      const data = await api.get<Lead[]>("/sales/leads");
       setLeads(data || []);
     } catch (err) {
       console.error("Failed to load leads");
@@ -75,8 +77,10 @@ export default function SalesPage() {
   };
 
   const handleAddLead = async () => {
+    setAdding(true);
+    setAddError(null);
     try {
-      await api.post("/leads", formData);
+      await api.post("/sales/leads", formData);
       setFormData({
         name: "",
         source: "Website",
@@ -88,7 +92,9 @@ export default function SalesPage() {
       setShowForm(false);
       loadLeads();
     } catch (err) {
-      console.error("Failed to add lead");
+      setAddError("Couldn't save this lead — it was not recorded. Check your connection and try again.");
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -244,11 +250,15 @@ export default function SalesPage() {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
+              {addError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{addError}</div>
+              )}
               <button
                 onClick={handleAddLead}
-                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                disabled={adding}
+                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Save Lead
+                {adding ? "Saving..." : "Save Lead"}
               </button>
             </div>
           )}

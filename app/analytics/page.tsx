@@ -23,6 +23,8 @@ export default function AnalyticsPage() {
     description: "",
     severity: "Low",
   });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     loadIncidents();
@@ -39,23 +41,20 @@ export default function AnalyticsPage() {
 
   const submitIncident = async () => {
     if (!formData.description.trim()) return;
+    setSubmitting(true);
+    setSubmitError(null);
     try {
       await api.post("/qhs/incidents", formData);
       setFormData({ type: "Near Miss", description: "", severity: "Low" });
       setShowForm(false);
       loadIncidents();
     } catch (err) {
-      setIncidents((prev) => [
-        {
-          id: `local_${Date.now()}`,
-          ...formData,
-          status: "Open",
-          createdAt: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-      setFormData({ type: "Near Miss", description: "", severity: "Low" });
-      setShowForm(false);
+      // Do NOT fake a local success here — an incident report that silently
+      // fails to save is a real safety/compliance risk. Show the failure
+      // instead so the user knows to retry or report it another way.
+      setSubmitError("Couldn't submit this report — it was not saved. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -180,11 +179,15 @@ export default function AnalyticsPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
                 rows={3}
               />
+              {submitError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{submitError}</div>
+              )}
               <button
                 onClick={submitIncident}
-                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                disabled={submitting}
+                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Submit Report
+                {submitting ? "Submitting..." : "Submit Report"}
               </button>
             </div>
           )}

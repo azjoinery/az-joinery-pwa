@@ -54,6 +54,8 @@ export default function DesignPage() {
   const [showVarForm, setShowVarForm] = useState(false);
   const [varDesc, setVarDesc] = useState("");
   const [varAmount, setVarAmount] = useState(0);
+  const [varError, setVarError] = useState<string | null>(null);
+  const [varSaving, setVarSaving] = useState(false);
 
   useEffect(() => {
     loadVariations();
@@ -80,21 +82,22 @@ export default function DesignPage() {
 
   const addVariation = async () => {
     if (!varDesc.trim()) return;
+    setVarSaving(true);
+    setVarError(null);
     try {
+      // NOTE: this should really be POST /design/variations (job-scoped) —
+      // this page isn't job-scoped yet, tracked as Phase 2 work. For now,
+      // just make sure a failed save is shown as a failure, not silently
+      // added to the list as if it had saved (that was masking real data loss).
       await api.post("/variations", { description: varDesc, amount: varAmount, status: "Draft" });
       setVarDesc("");
       setVarAmount(0);
       setShowVarForm(false);
       loadVariations();
     } catch (err) {
-      // add locally as fallback so UI still works if API endpoint isn't ready
-      setVariations((prev) => [
-        ...prev,
-        { id: `local_${Date.now()}`, description: varDesc, amount: varAmount, status: "Draft" },
-      ]);
-      setVarDesc("");
-      setVarAmount(0);
-      setShowVarForm(false);
+      setVarError("Couldn't save this variation — it was not recorded. Check your connection and try again.");
+    } finally {
+      setVarSaving(false);
     }
   };
 
@@ -216,11 +219,15 @@ export default function DesignPage() {
                 onChange={(e) => setVarAmount(parseFloat(e.target.value) || 0)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
+              {varError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{varError}</div>
+              )}
               <button
                 onClick={addVariation}
-                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                disabled={varSaving}
+                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Save Variation
+                {varSaving ? "Saving..." : "Save Variation"}
               </button>
             </div>
           )}

@@ -9,7 +9,6 @@ export default function LoginPage() {
   const { login, loading, error } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<"production" | "designer" | "manager">("production");
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,12 +17,6 @@ export default function LoginPage() {
       router.push("/dashboard");
     }, 500);
   };
-
-  const roles = [
-    { id: "production", label: "Production", desc: "Factory floor logging" },
-    { id: "designer", label: "Designer", desc: "Design workflow" },
-    { id: "manager", label: "Manager", desc: "Operations overview" },
-  ];
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-white px-4">
@@ -62,29 +55,6 @@ export default function LoginPage() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:bg-gray-50"
               required
             />
-          </div>
-
-          {/* Role Selector */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">Select Your Role</label>
-            <div className="space-y-2">
-              {roles.map((role) => (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => setSelectedRole(role.id as any)}
-                  disabled={loading}
-                  className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                    selectedRole === role.id
-                      ? "border-orange-500 bg-orange-50"
-                      : "border-gray-200 bg-gray-50 hover:border-orange-300"
-                  } disabled:opacity-50`}
-                >
-                  <div className="font-semibold text-gray-900">{role.label}</div>
-                  <div className="text-sm text-gray-600">{role.desc}</div>
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Error Message */}
