@@ -35,10 +35,10 @@ export default function InvoicesPage() {
   const loadData = async () => {
     try {
       if (tab === "quotes") {
-        const data = await api.get<QuoteOrInvoice[]>("/quotes");
+        const data = await api.get<QuoteOrInvoice[]>("/sales/quotes");
         setQuotes(data || []);
       } else if (tab === "invoices") {
-        const data = await api.get<QuoteOrInvoice[]>("/invoices");
+        const data = await api.get<QuoteOrInvoice[]>("/accounts/invoices");
         setInvoices(data || []);
       }
     } catch (err) {
@@ -61,7 +61,7 @@ export default function InvoicesPage() {
   const handleSave = async () => {
     if (!client.trim()) return;
     const payload = { client, lineItems: items, subtotal: total, gst, total: totalWithGst, status: "Draft" };
-    const endpoint = tab === "quotes" ? "/quotes" : "/invoices";
+    const endpoint = tab === "quotes" ? "/sales/quotes" : "/accounts/invoices";
     setSaving(true);
     setSaveError(null);
     try {

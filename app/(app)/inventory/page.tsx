@@ -7,10 +7,11 @@ interface StockItem {
   id: string;
   name: string;
   category: string;
-  quantity: number;
+  stockType: string;
+  on_hand_qty: number;
   unit: string;
-  reorderLevel: number;
-  costPerUnit: number;
+  reorder_point: number;
+  unit_cost: number;
   supplier: string;
 }
 
@@ -19,13 +20,16 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"stock" | "orders" | "suppliers">("stock");
   const [showForm, setShowForm] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     category: "Board Materials",
-    quantity: 0,
+    stockType: "hardware",
+    on_hand_qty: 0,
     unit: "each",
-    reorderLevel: 10,
-    costPerUnit: 0,
+    reorder_point: 10,
+    unit_cost: 0,
     supplier: "",
   });
 
@@ -36,7 +40,9 @@ export default function InventoryPage() {
   const loadStocks = async () => {
     setLoading(true);
     try {
-      const data = await api.get<StockItem[]>("/stock");
+      // Real backend route is /stock/items (a bare /stock never existed —
+      // this page was 404ing on every load until this fix).
+      const data = await api.get<StockItem[]>("/stock/items");
       setStocks(data || []);
     } catch (err) {
       console.error("Failed to load stocks");
@@ -46,25 +52,30 @@ export default function InventoryPage() {
   };
 
   const handleAddStock = async () => {
+    setAdding(true);
+    setAddError(null);
     try {
-      await api.post("/stock", formData);
+      await api.post("/stock/items", formData);
       setFormData({
         name: "",
         category: "Board Materials",
-        quantity: 0,
+        stockType: "hardware",
+        on_hand_qty: 0,
         unit: "each",
-        reorderLevel: 10,
-        costPerUnit: 0,
+        reorder_point: 10,
+        unit_cost: 0,
         supplier: "",
       });
       setShowForm(false);
       loadStocks();
     } catch (err) {
-      console.error("Failed to add stock");
+      setAddError("Couldn't save this material — it was not recorded. Check your connection and try again.");
+    } finally {
+      setAdding(false);
     }
   };
 
-  const lowStockItems = stocks.filter((s) => s.quantity <= s.reorderLevel);
+  const lowStockItems = stocks.filter((s) => s.on_hand_qty <= s.reorder_point);
 
   const categories = [
     "Board Materials",
@@ -161,18 +172,18 @@ export default function InventoryPage() {
               <input
                 type="number"
                 placeholder="Quantity"
-                value={formData.quantity}
+                value={formData.on_hand_qty}
                 onChange={(e) =>
-                  setFormData({ ...formData, quantity: parseInt(e.target.value) })
+                  setFormData({ ...formData, on_hand_qty: parseInt(e.target.value) || 0 })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
               <input
                 type="number"
                 placeholder="Cost per unit"
-                value={formData.costPerUnit}
+                value={formData.unit_cost}
                 onChange={(e) =>
-                  setFormData({ ...formData, costPerUnit: parseFloat(e.target.value) })
+                  setFormData({ ...formData, unit_cost: parseFloat(e.target.value) || 0 })
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
@@ -183,11 +194,15 @@ export default function InventoryPage() {
                 onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
+              {addError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{addError}</div>
+              )}
               <button
                 onClick={handleAddStock}
-                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                disabled={adding}
+                className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Save Material
+                {adding ? "Saving..." : "Save Material"}
               </button>
             </div>
           )}
@@ -198,7 +213,7 @@ export default function InventoryPage() {
               <h3 className="font-semibold text-red-900 mb-2">⚠️ Low Stock Alert</h3>
               {lowStockItems.map((item) => (
                 <div key={item.id} className="text-sm text-red-700 mb-1">
-                  {item.name}: {item.quantity} {item.unit} (Reorder: {item.reorderLevel})
+                  {item.name}: {item.on_hand_qty} {item.unit} (Reorder: {item.reorder_point})
                 </div>
               ))}
             </div>
@@ -220,17 +235,17 @@ export default function InventoryPage() {
                     </div>
                     <span
                       className={`px-2 py-1 rounded text-sm font-medium ${
-                        stock.quantity <= stock.reorderLevel
+                        stock.on_hand_qty <= stock.reorder_point
                           ? "bg-red-100 text-red-800"
                           : "bg-green-100 text-green-800"
                       }`}
                     >
-                      {stock.quantity} {stock.unit}
+                      {stock.on_hand_qty} {stock.unit}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500 space-y-1">
                     <div>Supplier: {stock.supplier}</div>
-                    <div>Cost: ${stock.costPerUnit}/unit</div>
+                    <div>Cost: ${stock.unit_cost}/unit</div>
                   </div>
                 </div>
               ))

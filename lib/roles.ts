@@ -7,8 +7,14 @@
 // AZ-Joinery-App-Audit-and-Plan.md for the full picture.
 //
 // Role names match the backend's `ROLES` set exactly (server.py ~line 28).
-// "designer" and "employee" are legacy aliases kept for old accounts —
-// treated identically to "drafter" / "cabinet_maker" here.
+// "employee" is a legacy alias kept for old accounts, treated identically to
+// "cabinet_maker" here. "designer" (legacy alias for "drafter") has been
+// deliberately dropped from this table per Allan's decision — Designer is
+// not a distinct role going forward, it's just Drafter. The backend still
+// accepts "designer" as a legacy DB value for old rows, but no new account
+// should ever be created with it, and this frontend treats it as an
+// unmapped role (falls through to the SAFE_DEFAULT below) rather than
+// giving it special-cased access.
 
 export type Role =
   | "managing_director"
@@ -18,7 +24,6 @@ export type Role =
   | "supervisor"
   | "office"
   | "drafter"
-  | "designer"
   | "cabinet_maker"
   | "installer"
   | "employee"
@@ -63,9 +68,7 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   office: ["inventory", "invoices", "dashboard"],
 
   // Design module only — matches the original app (Design + Profile only).
-  // "designer" is a legacy alias for "drafter" (same access), per decision.
   drafter: ["design"],
-  designer: ["design"],
 
   // Floor workers — daily production log + their own tasks only.
   cabinet_maker: ["dashboard", "tasks"],

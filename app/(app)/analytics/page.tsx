@@ -5,11 +5,23 @@ import { api } from "@/lib/api/client";
 
 interface QHSIncident {
   id: string;
-  type: string;
+  category: string;
   description: string;
-  severity: "Low" | "Medium" | "High";
+  priority: "Low" | "Medium" | "High" | "Critical";
   status: string;
-  createdAt: string;
+  reportDate: string;
+}
+
+interface ProductionSeries {
+  grand: number;
+}
+
+interface PerformanceRow {
+  id: string;
+  employeeName: string;
+  date: string;
+  score: number;
+  overallRating: string;
 }
 
 const INCIDENT_TYPES = ["Near Miss", "Injury", "Equipment Damage", "Hazard Identified", "Other"];
@@ -25,17 +37,46 @@ export default function AnalyticsPage() {
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [dailyOutput, setDailyOutput] = useState<number | null>(null);
+  const [weeklyOutput, setWeeklyOutput] = useState<number | null>(null);
+  const [performance, setPerformance] = useState<PerformanceRow[]>([]);
 
   useEffect(() => {
     loadIncidents();
+    loadProductionKpis();
+    loadPerformance();
   }, []);
 
   const loadIncidents = async () => {
     try {
-      const data = await api.get<QHSIncident[]>("/qhs/incidents");
+      // Real backend route is /compliance (there is no /qhs namespace) —
+      // this page was 404ing on every load and submit until this fix.
+      const data = await api.get<QHSIncident[]>("/compliance");
       setIncidents(data || []);
     } catch (err) {
       // no data yet
+    }
+  };
+
+  const loadProductionKpis = async () => {
+    try {
+      const [daily, weekly] = await Promise.all([
+        api.get<ProductionSeries>("/analytics/production?period=daily"),
+        api.get<ProductionSeries>("/analytics/production?period=weekly"),
+      ]);
+      setDailyOutput(daily.grand);
+      setWeeklyOutput(weekly.grand);
+    } catch (err) {
+      // leave as null -> UI shows "--" rather than a fabricated number
+    }
+  };
+
+  const loadPerformance = async () => {
+    try {
+      const data = await api.get<PerformanceRow[]>("/performance");
+      setPerformance((data || []).slice(0, 5));
+    } catch (err) {
+      // supervisor/manager/admin only — a 403 here for other roles is expected
     }
   };
 
@@ -44,7 +85,14 @@ export default function AnalyticsPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await api.post("/qhs/incidents", formData);
+      // Map the simple UI form onto the real ComplianceIn shape the backend
+      // actually expects (category/priority/reportDate, not type/severity).
+      await api.post("/compliance", {
+        category: formData.type,
+        priority: formData.severity,
+        description: formData.description,
+        reportDate: new Date().toISOString().slice(0, 10),
+      });
       setFormData({ type: "Near Miss", description: "", severity: "Low" });
       setShowForm(false);
       loadIncidents();
@@ -58,10 +106,11 @@ export default function AnalyticsPage() {
     }
   };
 
-  const severityColor = {
+  const severityColor: Record<string, string> = {
     Low: "bg-gray-100 text-gray-800",
     Medium: "bg-yellow-100 text-yellow-800",
     High: "bg-red-100 text-red-800",
+    Critical: "bg-red-200 text-red-900",
   };
 
   return (
@@ -71,7 +120,7 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
           <div className="text-sm text-blue-600">Daily Output</div>
-          <div className="text-3xl font-bold text-blue-900">125</div>
+          <div className="text-3xl font-bold text-blue-900">{dailyOutput ?? "--"}</div>
         </div>
         <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
           <div className="text-sm text-yellow-600">Open Incidents</div>
@@ -107,15 +156,17 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
               <div className="text-sm text-green-600">Weekly Output</div>
-              <div className="text-2xl font-bold text-green-900">145</div>
+              <div className="text-2xl font-bold text-green-900">{weeklyOutput ?? "--"}</div>
             </div>
             <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
               <div className="text-sm text-purple-600">Avg per Day</div>
-              <div className="text-2xl font-bold text-purple-900">29</div>
+              <div className="text-2xl font-bold text-purple-900">
+                {weeklyOutput != null ? Math.round(weeklyOutput / 7) : "--"}
+              </div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-lg border border-gray-200 text-center text-gray-500">
-            📈 Full production charts coming in Phase 7
+            📈 Full production charts coming in Phase 7 — the numbers above are real (from daily logs), the chart itself isn't built yet
           </div>
         </div>
       )}
@@ -123,23 +174,26 @@ export default function AnalyticsPage() {
       {tab === "staff" && (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <div className="p-4 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">Top Performers (this week)</h3>
+            <h3 className="font-semibold text-gray-900">Recent Performance Reviews</h3>
           </div>
-          <div className="divide-y divide-gray-200">
-            {[
-              { name: "John Smith", output: 45, efficiency: "95%" },
-              { name: "Sarah Wilson", output: 42, efficiency: "92%" },
-              { name: "Mike Johnson", output: 38, efficiency: "88%" },
-            ].map((staff, i) => (
-              <div key={i} className="p-4 flex justify-between items-center">
-                <div>
-                  <p className="font-medium text-gray-900">{staff.name}</p>
-                  <p className="text-sm text-gray-600">{staff.output} units/week</p>
+          {performance.length === 0 ? (
+            <div className="p-6 text-center text-gray-600">
+              <p className="mb-1">No performance reviews recorded yet</p>
+              <p className="text-sm text-gray-400">Reviews are logged by a supervisor or manager and will show here once entered.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {performance.map((row) => (
+                <div key={row.id} className="p-4 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-gray-900">{row.employeeName}</p>
+                    <p className="text-sm text-gray-600">{row.date} · {row.overallRating}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-orange-600">{row.score}</span>
                 </div>
-                <span className="text-sm font-semibold text-orange-600">{staff.efficiency}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -202,9 +256,9 @@ export default function AnalyticsPage() {
               {incidents.map((inc) => (
                 <div key={inc.id} className="bg-white p-4 rounded-lg border border-gray-200">
                   <div className="flex justify-between items-start mb-1">
-                    <span className="font-medium text-gray-900 text-sm">{inc.type}</span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor[inc.severity]}`}>
-                      {inc.severity}
+                    <span className="font-medium text-gray-900 text-sm">{inc.category}</span>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor[inc.priority] || severityColor.Low}`}>
+                      {inc.priority}
                     </span>
                   </div>
                   <p className="text-sm text-gray-600">{inc.description}</p>
