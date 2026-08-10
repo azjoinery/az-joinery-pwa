@@ -147,9 +147,9 @@ export default function TeamPage() {
   const selectedUser = users.find((u) => u.id === selectedUserId) || null;
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">👥 Team &amp; Roles</h1>
-      <p className="text-sm text-gray-600">Manage staff accounts, roles, and permissions.</p>
+    <div className="page space-y-4">
+      <h1 className="page-title">Team &amp; Roles</h1>
+      <p className="page-subtitle">Manage staff accounts, roles, and permissions.</p>
 
       <div className="flex gap-2 border-b border-gray-200">
         <button
@@ -186,13 +186,13 @@ export default function TeamPage() {
             <div className="space-y-4">
               <button
                 onClick={() => setShowCreate(!showCreate)}
-                className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+                className="btn-primary w-full"
               >
                 + New Team Member
               </button>
 
               {createError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{createError}</div>
+                <div className="alert-danger">{createError}</div>
               )}
 
               {showCreate && (
@@ -243,7 +243,7 @@ export default function TeamPage() {
               )}
 
               {usersError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{usersError}</div>
+                <div className="alert-danger">{usersError}</div>
               )}
 
               {usersLoading ? (
@@ -279,7 +279,7 @@ export default function TeamPage() {
       {tab === "audit" && (
         <div className="space-y-2">
           {auditError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{auditError}</div>
+            <div className="alert-danger">{auditError}</div>
           )}
           {auditLoading ? (
             <div className="text-center py-8 text-gray-600">Loading audit log...</div>
@@ -444,7 +444,7 @@ function UserDetail({
         </div>
 
         {saveError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>
+          <div className="alert-danger">{saveError}</div>
         )}
         <button
           onClick={save}
@@ -469,7 +469,7 @@ function UserDetail({
                 Explicit overrides for this user. Unchecked cells fall back to their role&apos;s default access.
               </p>
               {matrixError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{matrixError}</div>
+                <div className="alert-danger">{matrixError}</div>
               )}
               <div className="overflow-x-auto">
                 <table className="text-xs w-full">
@@ -515,7 +515,7 @@ function UserDetail({
         <div className="bg-white p-4 rounded-lg border border-red-200 space-y-2">
           <p className="text-sm font-semibold text-red-700">Danger zone</p>
           {deleteError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{deleteError}</div>
+            <div className="alert-danger">{deleteError}</div>
           )}
           {!confirmDelete ? (
             <button onClick={() => setConfirmDelete(true)} className="text-sm text-red-600 hover:text-red-800">

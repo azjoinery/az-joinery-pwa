@@ -89,12 +89,12 @@ export default function JobsPage() {
   }
 
   return (
-    <div className="p-4 pb-28 space-y-4">
+    <div className="page space-y-4">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
+        <h1 className="page-title">Jobs</h1>
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-4 py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+          className="btn-primary btn-sm"
         >
           + New Job
         </button>
@@ -154,7 +154,7 @@ export default function JobsPage() {
             </div>
           </div>
           {createError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{createError}</div>
+            <div className="alert-danger">{createError}</div>
           )}
           <button
             onClick={createJob}
@@ -167,7 +167,7 @@ export default function JobsPage() {
       )}
 
       {loadError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{loadError}</div>
+        <div className="alert-danger">{loadError}</div>
       )}
 
       {/* Filter */}
@@ -203,7 +203,7 @@ export default function JobsPage() {
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <h3 className="font-semibold text-gray-900">{job.projectName || job.client}</h3>
-                  <p className="text-sm text-gray-600">{job.client}</p>
+                  <p className="page-subtitle">{job.client}</p>
                 </div>
                 <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[job.status] || "bg-gray-100"}`}>
                   {job.status}
@@ -266,7 +266,7 @@ function JobDetail({
   };
 
   return (
-    <div className="p-4 pb-28">
+    <div className="page">
       <div className="flex justify-between items-center mb-4">
         <button onClick={onBack} className="text-orange-600 font-medium hover:underline">
           ← Back to Jobs
@@ -356,7 +356,7 @@ function JobDetail({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
             />
             {saveError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>
+              <div className="alert-danger">{saveError}</div>
             )}
             <div className="flex gap-2">
               <button
@@ -381,21 +381,21 @@ function JobDetail({
 
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <div className="text-sm text-gray-600">Status</div>
+                <div className="page-subtitle">Status</div>
                 <div className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${statusColors[job.status] || "bg-gray-100"}`}>
                   {job.status}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-gray-600">Priority</div>
+                <div className="page-subtitle">Priority</div>
                 <div className="font-semibold text-gray-900 mt-1">{job.priority}</div>
               </div>
               <div>
-                <div className="text-sm text-gray-600">Due Date</div>
+                <div className="page-subtitle">Due Date</div>
                 <div className="font-semibold text-gray-900 mt-1">{job.dueDate || "N/A"}</div>
               </div>
               <div>
-                <div className="text-sm text-gray-600">Progress</div>
+                <div className="page-subtitle">Progress</div>
                 <div className="mt-1">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div

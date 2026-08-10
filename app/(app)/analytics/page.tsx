@@ -114,8 +114,8 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">📊 Analytics & Compliance</h1>
+    <div className="page space-y-4">
+      <h1 className="page-title">Analytics &amp; Compliance</h1>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
@@ -166,7 +166,7 @@ export default function AnalyticsPage() {
             </div>
           </div>
           <div className="bg-white p-6 rounded-lg border border-gray-200 text-center text-gray-500">
-            📈 Full production charts coming in Phase 7 — the numbers above are real (from daily logs), the chart itself isn't built yet
+            Full production charts coming in Phase 7 — the numbers above are real (from daily logs), the chart itself isn't built yet
           </div>
         </div>
       )}
@@ -187,7 +187,7 @@ export default function AnalyticsPage() {
                 <div key={row.id} className="p-4 flex justify-between items-center">
                   <div>
                     <p className="font-medium text-gray-900">{row.employeeName}</p>
-                    <p className="text-sm text-gray-600">{row.date} · {row.overallRating}</p>
+                    <p className="page-subtitle">{row.date} · {row.overallRating}</p>
                   </div>
                   <span className="text-sm font-semibold text-orange-600">{row.score}</span>
                 </div>
@@ -201,7 +201,7 @@ export default function AnalyticsPage() {
         <div className="space-y-4">
           <button
             onClick={() => setShowForm(!showForm)}
-            className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+            className="btn-primary w-full"
           >
             + Report Incident
           </button>
@@ -234,7 +234,7 @@ export default function AnalyticsPage() {
                 rows={3}
               />
               {submitError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{submitError}</div>
+                <div className="alert-danger">{submitError}</div>
               )}
               <button
                 onClick={submitIncident}
@@ -249,19 +249,19 @@ export default function AnalyticsPage() {
           {incidents.length === 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-600">
               <p className="mb-1">No incidents reported</p>
-              <p className="text-sm">✅ Safe workshop</p>
+              <p className="text-sm">Safe workshop</p>
             </div>
           ) : (
             <div className="space-y-2">
               {incidents.map((inc) => (
-                <div key={inc.id} className="bg-white p-4 rounded-lg border border-gray-200">
+                <div key={inc.id} className="card card-pad">
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-medium text-gray-900 text-sm">{inc.category}</span>
                     <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor[inc.priority] || severityColor.Low}`}>
                       {inc.priority}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600">{inc.description}</p>
+                  <p className="page-subtitle">{inc.description}</p>
                 </div>
               ))}
             </div>

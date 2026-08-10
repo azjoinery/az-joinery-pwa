@@ -252,8 +252,8 @@ export default function SalesPage() {
   ];
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">🎯 Sales</h1>
+    <div className="page space-y-4">
+      <h1 className="page-title">Sales</h1>
 
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
         {tabs.map((t) => (
@@ -381,7 +381,7 @@ function PipelineTab({ catalog, employees }: { catalog: SalesCatalog; employees:
         ))}
       </div>
 
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + New Lead
       </button>
 
@@ -426,7 +426,7 @@ function PipelineTab({ catalog, employees }: { catalog: SalesCatalog; employees:
           <textarea placeholder="Notes" value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} />
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={createLead} disabled={saving || !form.clientName.trim()}
             className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Saving..." : "Save Lead"}
@@ -446,7 +446,7 @@ function PipelineTab({ catalog, employees }: { catalog: SalesCatalog; employees:
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <h3 className="font-semibold text-gray-900">{lead.clientName}</h3>
-                  <p className="text-sm text-gray-600">{lead.projectName}</p>
+                  <p className="page-subtitle">{lead.projectName}</p>
                 </div>
                 <span className={`px-2 py-1 rounded text-xs font-medium ${TEMP_COLOR[lead.temperature] || "bg-gray-100 text-gray-700"}`}>
                   {lead.temperature}
@@ -585,11 +585,11 @@ function LeadDetail({
     <div className="space-y-4">
       <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to pipeline</button>
 
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
+      <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{currentLead.leadNumber} · {currentLead.clientName}</h2>
-            <p className="text-sm text-gray-600">{currentLead.projectName}</p>
+            <p className="page-subtitle">{currentLead.projectName}</p>
           </div>
           <span className={`px-2 py-1 rounded text-xs font-medium ${TEMP_COLOR[currentLead.temperature] || "bg-gray-100"}`}>
             {currentLead.temperature}
@@ -809,7 +809,7 @@ function ContactsTab({ catalog, employees }: { catalog: SalesCatalog; employees:
       <input type="text" placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
 
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + New Contact
       </button>
 
@@ -839,7 +839,7 @@ function ContactsTab({ catalog, employees }: { catalog: SalesCatalog; employees:
           <textarea placeholder="Notes" value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} />
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={createContact} disabled={saving || !form.name.trim()}
             className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Saving..." : "Save Contact"}
@@ -859,7 +859,7 @@ function ContactsTab({ catalog, employees }: { catalog: SalesCatalog; employees:
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900">{c.name}{c.active === false && <span className="ml-2 text-xs text-gray-400">(inactive)</span>}</h3>
-                  <p className="text-sm text-gray-600">{c.companyName || c.contactType}</p>
+                  <p className="page-subtitle">{c.companyName || c.contactType}</p>
                 </div>
                 <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">{c.contactType}</span>
               </div>
@@ -1059,7 +1059,7 @@ function QuotesTab() {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + New Quote
       </button>
 
@@ -1125,7 +1125,7 @@ function QuotesTab() {
             <span>{fmt(total)}</span>
           </div>
 
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={createQuote} disabled={saving || !client.trim()}
             className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Creating..." : "Create Quote"}
@@ -1145,7 +1145,7 @@ function QuotesTab() {
               <div className="flex justify-between items-start">
                 <div>
                   <span className="font-semibold text-gray-900">{q.quoteNumber}</span>
-                  <p className="text-sm text-gray-600">{q.client} · {q.projectName}</p>
+                  <p className="page-subtitle">{q.client} · {q.projectName}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded font-medium ${QUOTE_STATUS_COLOR[q.status || "Draft"] || "bg-gray-100"}`}>
                   {q.status || "Draft"}
@@ -1197,11 +1197,11 @@ function QuoteDetail({ quote, onBack, onUpdated }: { quote: Quote; onBack: () =>
     <div className="space-y-4">
       <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to quotes</button>
 
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
+      <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{quote.quoteNumber}{quote.revisionNumber ? ` (rev ${quote.revisionNumber})` : ""}</h2>
-            <p className="text-sm text-gray-600">{quote.client} · {quote.projectName}</p>
+            <p className="page-subtitle">{quote.client} · {quote.projectName}</p>
             {quote.siteAddress && <p className="text-xs text-gray-500">{quote.siteAddress}</p>}
           </div>
           <span className={`text-xs px-2 py-1 rounded font-medium ${QUOTE_STATUS_COLOR[status] || "bg-gray-100"}`}>{status}</span>
@@ -1329,7 +1329,7 @@ function CampaignsTab({ catalog }: { catalog: MarketingCatalog }) {
 
   return (
     <div className="space-y-3">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + New Campaign
       </button>
       {showForm && (
@@ -1354,7 +1354,7 @@ function CampaignsTab({ catalog }: { catalog: MarketingCatalog }) {
           </div>
           <textarea placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} />
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={create} disabled={saving || !form.name.trim()}
             className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Saving..." : "Save Campaign"}
@@ -1368,7 +1368,7 @@ function CampaignsTab({ catalog }: { catalog: MarketingCatalog }) {
       ) : (
         <div className="space-y-2">
           {campaigns.map((c) => (
-            <div key={c.id} className="bg-white p-4 rounded-lg border border-gray-200">
+            <div key={c.id} className="card card-pad">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-gray-900">{c.name}</h3>
@@ -1447,7 +1447,7 @@ function SocialTab({ catalog }: { catalog: MarketingCatalog }) {
 
   return (
     <div className="space-y-3">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + Log Post
       </button>
       {showForm && (
@@ -1483,7 +1483,7 @@ function SocialTab({ catalog }: { catalog: MarketingCatalog }) {
       ) : (
         <div className="space-y-2">
           {posts.map((p) => (
-            <div key={p.id} className="bg-white p-4 rounded-lg border border-gray-200">
+            <div key={p.id} className="card card-pad">
               <div className="flex justify-between items-start">
                 <div>
                   <span className="font-semibold text-gray-900">{p.platform}</span>
@@ -1554,7 +1554,7 @@ function SeoTab() {
 
   return (
     <div className="space-y-3">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + Log SEO Result
       </button>
       {showForm && (
@@ -1586,7 +1586,7 @@ function SeoTab() {
       ) : (
         <div className="space-y-2">
           {entries.map((s) => (
-            <div key={s.id} className="bg-white p-4 rounded-lg border border-gray-200">
+            <div key={s.id} className="card card-pad">
               <div className="flex justify-between items-start">
                 <div>
                   <span className="font-semibold text-gray-900 break-all">{s.url}</span>
@@ -1674,7 +1674,7 @@ function ReportsTab() {
         ))}
       </div>
 
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
+      <div className="card card-pad">
         <p className="text-sm font-semibold text-gray-900 mb-2">Leads by Source</p>
         {data.bySource.length === 0 ? (
           <p className="text-sm text-gray-500">No lead data yet.</p>

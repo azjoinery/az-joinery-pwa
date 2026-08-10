@@ -5,12 +5,18 @@ import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 import { DailyEntry, Job } from "@/lib/types";
+import Icon, { type IconName } from "@/lib/components/Icon";
 
 // Roles that get the executive/management overview instead of the
 // floor-worker daily-log form. This mirrors the old app's split between
 // ManagementOverview (MD/GM/DM) and EmployeeDashboard (floor roles) — see
 // AZ-Joinery-Full-Audit-and-Rebuild-Plan.md Section 2, "biggest UX gap."
-const EXECUTIVE_ROLES = new Set(["managing_director", "manager", "department_manager", "admin"]);
+const EXECUTIVE_ROLES = new Set([
+  "managing_director",
+  "manager",
+  "department_manager",
+  "admin",
+]);
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -20,11 +26,96 @@ export default function DashboardPage() {
   return <FloorLogDashboard />;
 }
 
-// ---------------------------------------------------------------------
-// Executive / management overview — hero snapshot, alerts feed, quick
-// actions. Every number here is either a real API value or a visible "--"
-// when that data couldn't be loaded (never a placeholder presented as real).
-// ---------------------------------------------------------------------
+/* ==========================================================================
+   Shared presentation
+   ========================================================================== */
+
+/**
+ * Workshop hero. The photo is always behind a scrim so the heading keeps a
+ * high contrast ratio regardless of how bright that crop of the image is.
+ */
+function WorkshopHero({
+  eyebrow,
+  title,
+  subtitle,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <section className="relative isolate mb-6 overflow-hidden rounded-card bg-ink-950">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url(/workshop/hero-wide.jpg)" }}
+      />
+      <div className="img-scrim absolute inset-0" />
+
+      <div className="relative z-10 p-5 md:p-7">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-orange">
+          {eyebrow}
+        </p>
+        <h1 className="mt-2 font-heading text-2xl font-semibold tracking-tight text-white md:text-3xl">
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="mt-1.5 text-sm text-white/65">{subtitle}</p>
+        )}
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/** Big figure shown inside the hero, on the photo. */
+function HeroFigure({
+  label,
+  value,
+  primary = false,
+}: {
+  label: string;
+  value: string;
+  primary?: boolean;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] font-medium uppercase tracking-[0.13em] text-white/50">
+        {label}
+      </div>
+      <div
+        className={`mt-1 font-heading font-semibold tabular tracking-tight text-white ${
+          primary ? "text-3xl md:text-4xl" : "text-xl md:text-2xl"
+        }`}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeading({
+  children,
+  action,
+}: {
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-center justify-between">
+      <h2 className="section-title">{children}</h2>
+      {action}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   Executive / management overview
+
+   Every number here is either a real API value or a visible "—" when that
+   data couldn't be loaded (never a placeholder presented as real).
+   ========================================================================== */
 
 interface Alert {
   key: string;
@@ -60,18 +151,35 @@ function ExecutiveOverview() {
     // Fetch everything in parallel and let each one fail independently —
     // one missing permission or slow endpoint shouldn't blank the whole
     // page. This mirrors the old app's ManagementOverview pattern.
-    const [jobsR, prodR, flagsR, reportsR, lowStockR, acctR, salesR, designR, complianceR] =
-      await Promise.allSettled([
-        api.get<Job[]>("/jobs"),
-        api.get<{ grand: number; activeWorkers: number }>("/analytics/production?period=weekly"),
-        api.get<{ status?: string }[]>("/flags"),
-        api.get<{ status?: string }[]>("/reports"),
-        api.get<unknown[]>("/stock/items?lowOnly=true&active=true"),
-        api.get<{ outstanding: number }>("/accounts/dashboard"),
-        api.get<{ confirmedSalesValue: number; activeLeads: number; quotesSent: number }>("/sales/dashboard"),
-        api.get<{ inProgress: number; ready: number; overdue: number }>("/design/dashboard"),
-        api.get<{ status?: string }[]>("/compliance"),
-      ]);
+    const [
+      jobsR,
+      prodR,
+      flagsR,
+      reportsR,
+      lowStockR,
+      acctR,
+      salesR,
+      designR,
+      complianceR,
+    ] = await Promise.allSettled([
+      api.get<Job[]>("/jobs"),
+      api.get<{ grand: number; activeWorkers: number }>(
+        "/analytics/production?period=weekly"
+      ),
+      api.get<{ status?: string }[]>("/flags"),
+      api.get<{ status?: string }[]>("/reports"),
+      api.get<unknown[]>("/stock/items?lowOnly=true&active=true"),
+      api.get<{ outstanding: number }>("/accounts/dashboard"),
+      api.get<{
+        confirmedSalesValue: number;
+        activeLeads: number;
+        quotesSent: number;
+      }>("/sales/dashboard"),
+      api.get<{ inProgress: number; ready: number; overdue: number }>(
+        "/design/dashboard"
+      ),
+      api.get<{ status?: string }[]>("/compliance"),
+    ]);
 
     const today = new Date().toISOString().slice(0, 10);
     const newAlerts: Alert[] = [];
@@ -80,9 +188,17 @@ function ExecutiveOverview() {
       const jobs = jobsR.value || [];
       const notDone = (j: Job) => j.status !== "Delivered";
       setActiveJobs(jobs.filter(notDone).length);
-      const overdue = jobs.filter((j) => notDone(j) && j.dueDate && j.dueDate < today);
+      const overdue = jobs.filter(
+        (j) => notDone(j) && j.dueDate && j.dueDate < today
+      );
       if (overdue.length > 0) {
-        newAlerts.push({ key: "overdue-jobs", label: "Overdue jobs", count: overdue.length, href: "/jobs", tone: "red" });
+        newAlerts.push({
+          key: "overdue-jobs",
+          label: "Overdue jobs",
+          count: overdue.length,
+          href: "/jobs",
+          tone: "red",
+        });
       }
     } else {
       setLoadError(true);
@@ -95,22 +211,52 @@ function ExecutiveOverview() {
 
     if (flagsR.status === "fulfilled") {
       const open = (flagsR.value || []).filter((f) => f.status !== "Resolved");
-      if (open.length > 0) newAlerts.push({ key: "flags", label: "Open flags", count: open.length, href: "/tasks", tone: "amber" });
+      if (open.length > 0)
+        newAlerts.push({
+          key: "flags",
+          label: "Open flags",
+          count: open.length,
+          href: "/tasks",
+          tone: "amber",
+        });
     }
 
     if (reportsR.status === "fulfilled") {
       const open = (reportsR.value || []).filter((r) => r.status !== "Resolved");
-      if (open.length > 0) newAlerts.push({ key: "reports", label: "Open reports", count: open.length, href: "/tasks", tone: "amber" });
+      if (open.length > 0)
+        newAlerts.push({
+          key: "reports",
+          label: "Open reports",
+          count: open.length,
+          href: "/tasks",
+          tone: "amber",
+        });
     }
 
     if (lowStockR.status === "fulfilled") {
       const count = (lowStockR.value || []).length;
-      if (count > 0) newAlerts.push({ key: "low-stock", label: "Low stock items", count, href: "/inventory", tone: "amber" });
+      if (count > 0)
+        newAlerts.push({
+          key: "low-stock",
+          label: "Low stock items",
+          count,
+          href: "/inventory",
+          tone: "amber",
+        });
     }
 
     if (complianceR.status === "fulfilled") {
-      const open = (complianceR.value || []).filter((c) => c.status !== "Resolved" && c.status !== "Closed");
-      if (open.length > 0) newAlerts.push({ key: "qhs", label: "Open QHS incidents", count: open.length, href: "/analytics", tone: "red" });
+      const open = (complianceR.value || []).filter(
+        (c) => c.status !== "Resolved" && c.status !== "Closed"
+      );
+      if (open.length > 0)
+        newAlerts.push({
+          key: "qhs",
+          label: "Open QHS incidents",
+          count: open.length,
+          href: "/analytics",
+          tone: "red",
+        });
     }
 
     if (acctR.status === "fulfilled") setOutstanding(acctR.value.outstanding);
@@ -125,7 +271,13 @@ function ExecutiveOverview() {
       setDesignInProgress(designR.value.inProgress);
       setDesignReady(designR.value.ready);
       if (designR.value.overdue > 0) {
-        newAlerts.push({ key: "design-overdue", label: "Overdue design jobs", count: designR.value.overdue, href: "/design", tone: "red" });
+        newAlerts.push({
+          key: "design-overdue",
+          label: "Overdue design jobs",
+          count: designR.value.overdue,
+          href: "/design",
+          tone: "red",
+        });
       }
     }
 
@@ -133,122 +285,236 @@ function ExecutiveOverview() {
     setLoading(false);
   };
 
+  const currency = (n: number | null) =>
+    n != null
+      ? new Intl.NumberFormat("en-AU", {
+          style: "currency",
+          currency: "AUD",
+          maximumFractionDigits: 0,
+        }).format(n)
+      : "—";
+
   if (loading) {
     return (
-      <div className="p-4 pb-28">
-        <div className="text-center py-12 text-gray-600">Loading overview...</div>
+      <div className="page">
+        <div className="skeleton mb-6 h-44 rounded-card" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skeleton h-24 rounded-card" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 pb-28 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name}</h1>
-        <p className="text-sm text-gray-600">Business snapshot</p>
-      </div>
+    <div className="page">
+      <WorkshopHero
+        eyebrow="Business snapshot"
+        title={`Welcome, ${user?.name?.split(" ")[0] ?? ""}`}
+        subtitle="Where the workshop stands right now."
+      >
+        <div className="mt-6 grid grid-cols-2 gap-5 border-t border-white/15 pt-5 md:grid-cols-4">
+          <HeroFigure
+            label="Confirmed sales"
+            value={currency(confirmedSales)}
+            primary
+          />
+          <HeroFigure label="Outstanding" value={currency(outstanding)} />
+          <HeroFigure
+            label="Active jobs"
+            value={activeJobs != null ? String(activeJobs) : "—"}
+          />
+          <HeroFigure
+            label="Weekly output"
+            value={weeklyOutput != null ? String(weeklyOutput) : "—"}
+          />
+        </div>
+      </WorkshopHero>
 
       {loadError && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-          Some data on this page couldn't be loaded. The numbers shown are still accurate for what did load.
+        <div className="alert-danger mb-5" role="alert">
+          <Icon name="alert" size={17} className="mt-px" />
+          <span>
+            Some data on this page couldn&apos;t be loaded. The numbers shown are
+            still accurate for what did load.
+          </span>
         </div>
       )}
 
-      {/* Hero snapshot */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg p-6 shadow">
-        <div className="text-sm opacity-90">Confirmed sales value</div>
-        <div className="text-4xl font-bold">{confirmedSales != null ? `$${confirmedSales.toLocaleString()}` : "--"}</div>
-        <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-white/20 text-center">
-          <div>
-            <div className="text-xs opacity-80">Outstanding</div>
-            <div className="text-lg font-semibold">{outstanding != null ? `$${outstanding.toLocaleString()}` : "--"}</div>
-          </div>
-          <div>
-            <div className="text-xs opacity-80">Active Jobs</div>
-            <div className="text-lg font-semibold">{activeJobs ?? "--"}</div>
-          </div>
-          <div>
-            <div className="text-xs opacity-80">Weekly Output</div>
-            <div className="text-lg font-semibold">{weeklyOutput ?? "--"}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Alerts & Actions Needed */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Alerts & Actions Needed</h2>
+      {/* ---- Alerts ---- */}
+      <section className="mb-7">
+        <SectionHeading>Needs attention</SectionHeading>
         {alerts.length === 0 ? (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center text-green-800">
-            ✅ All clear — nothing needs attention right now
+          <div className="flex items-center gap-3 rounded-card border border-success/25 bg-success-light px-4 py-3.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-success text-white">
+              <Icon name="check" size={17} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-success-dark">All clear</p>
+              <p className="text-xs text-success-dark/75">
+                Nothing needs attention right now.
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid gap-2.5 sm:grid-cols-2">
             {alerts.map((a) => (
               <Link
                 key={a.key}
                 href={a.href}
-                className={`flex justify-between items-center p-3 rounded-lg border ${
-                  a.tone === "red" ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"
+                className={`group flex items-center gap-3 rounded-card border px-4 py-3.5 transition-all hover:shadow-card-hover ${
+                  a.tone === "red"
+                    ? "border-danger/25 bg-danger-light"
+                    : "border-warning/25 bg-warning-light"
                 }`}
               >
-                <span className={`text-sm font-medium ${a.tone === "red" ? "text-red-800" : "text-amber-800"}`}>{a.label}</span>
-                <span className={`text-sm font-bold ${a.tone === "red" ? "text-red-900" : "text-amber-900"}`}>{a.count}</span>
+                <span
+                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-white ${
+                    a.tone === "red" ? "bg-danger" : "bg-warning"
+                  }`}
+                >
+                  <Icon name="alert" size={18} />
+                </span>
+                <span
+                  className={`flex-1 text-sm font-semibold ${
+                    a.tone === "red" ? "text-danger-dark" : "text-warning-dark"
+                  }`}
+                >
+                  {a.label}
+                </span>
+                <span
+                  className={`font-heading text-xl font-semibold tabular ${
+                    a.tone === "red" ? "text-danger-dark" : "text-warning-dark"
+                  }`}
+                >
+                  {a.count}
+                </span>
+                <Icon
+                  name="chevronRight"
+                  size={17}
+                  className={`transition-transform group-hover:translate-x-0.5 ${
+                    a.tone === "red" ? "text-danger/60" : "text-warning/60"
+                  }`}
+                />
               </Link>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Departments */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Departments</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatTile label="Active Leads" value={activeLeads} href="/sales" />
-          <StatTile label="Design In Progress" value={designInProgress} href="/design" />
-          <StatTile label="Ready to Release" value={designReady} href="/design" />
-          <StatTile label="Quotes Sent" value={quotesSent} href="/invoices" />
+      {/* ---- Departments ---- */}
+      <section className="mb-7">
+        <SectionHeading>Departments</SectionHeading>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile
+            icon="sales"
+            label="Active leads"
+            value={activeLeads}
+            href="/sales"
+          />
+          <StatTile
+            icon="design"
+            label="Design in progress"
+            value={designInProgress}
+            href="/design"
+          />
+          <StatTile
+            icon="check"
+            label="Ready to release"
+            value={designReady}
+            href="/design"
+          />
+          <StatTile
+            icon="invoices"
+            label="Quotes sent"
+            value={quotesSent}
+            href="/invoices"
+          />
         </div>
-      </div>
+      </section>
 
-      {/* Quick Actions */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-4 gap-3">
-          <QuickAction href="/jobs" icon="📋" label="Jobs" />
-          <QuickAction href="/sales" icon="🎯" label="Sales" />
-          <QuickAction href="/design" icon="📐" label="Design" />
-          <QuickAction href="/inventory" icon="📦" label="Stock" />
-          <QuickAction href="/invoices" icon="💰" label="Invoices" />
-          <QuickAction href="/analytics" icon="📊" label="Analytics" />
-          <QuickAction href="/tasks" icon="✓" label="Tasks" />
+      {/* ---- Quick actions ---- */}
+      <section>
+        <SectionHeading>Quick actions</SectionHeading>
+        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
+          <QuickAction href="/jobs" icon="jobs" label="Jobs" />
+          <QuickAction href="/sales" icon="sales" label="Sales" />
+          <QuickAction href="/design" icon="design" label="Design" />
+          <QuickAction href="/inventory" icon="inventory" label="Stock" />
+          <QuickAction href="/invoices" icon="invoices" label="Invoices" />
+          <QuickAction href="/analytics" icon="analytics" label="Analytics" />
+          <QuickAction href="/tasks" icon="tasks" label="Tasks" />
         </div>
-      </div>
+      </section>
+
+      {activeWorkers != null && activeWorkers > 0 && (
+        <p className="mt-7 text-center text-xs text-ink-400">
+          {activeWorkers} {activeWorkers === 1 ? "person" : "people"} logged
+          production this week.
+        </p>
+      )}
     </div>
   );
 }
 
-function StatTile({ label, value, href }: { label: string; value: number | null; href: string }) {
+function StatTile({
+  icon,
+  label,
+  value,
+  href,
+}: {
+  icon: IconName;
+  label: string;
+  value: number | null;
+  href: string;
+}) {
   return (
-    <Link href={href} className="bg-white p-4 rounded-lg border border-gray-200 hover:border-orange-300 block">
-      <div className="text-sm text-gray-600">{label}</div>
-      <div className="text-2xl font-bold text-gray-900">{value ?? "--"}</div>
+    <Link href={href} className="card-interactive group card-pad block">
+      <div className="flex items-start justify-between">
+        <span className="grid h-9 w-9 place-items-center rounded-lg bg-ink-100 text-ink-500 transition-colors group-hover:bg-brand-orange/10 group-hover:text-brand-orange">
+          <Icon name={icon} size={18} />
+        </span>
+        <Icon
+          name="chevronRight"
+          size={16}
+          className="text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+        />
+      </div>
+      <div className="mt-3 font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">
+        {value ?? "—"}
+      </div>
+      <div className="mt-0.5 text-xs font-medium text-ink-500">{label}</div>
     </Link>
   );
 }
 
-function QuickAction({ href, icon, label }: { href: string; icon: string; label: string }) {
+function QuickAction({
+  href,
+  icon,
+  label,
+}: {
+  href: string;
+  icon: IconName;
+  label: string;
+}) {
   return (
-    <Link href={href} className="bg-white p-3 rounded-lg border border-gray-200 hover:border-orange-300 text-center">
-      <div className="text-xl mb-1">{icon}</div>
-      <div className="text-xs font-medium text-gray-700">{label}</div>
+    <Link
+      href={href}
+      className="card-interactive flex flex-col items-center gap-2 px-2 py-4 text-center"
+    >
+      <span className="grid h-10 w-10 place-items-center rounded-lg bg-ink-100 text-ink-600 transition-colors hover:bg-brand-orange/10">
+        <Icon name={icon} size={20} />
+      </span>
+      <span className="text-xs font-medium text-ink-700">{label}</span>
     </Link>
   );
 }
 
-// ---------------------------------------------------------------------
-// Floor-worker daily log — unchanged behaviour, shown to cabinet_maker,
-// installer, supervisor, office, and other non-executive roles.
-// ---------------------------------------------------------------------
+/* ==========================================================================
+   Floor-worker daily log — shown to cabinet_maker, installer, supervisor,
+   office, and other non-executive roles.
+   ========================================================================== */
 
 function FloorLogDashboard() {
   const { user } = useAuth();
@@ -256,22 +522,24 @@ function FloorLogDashboard() {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [ok, setOk] = useState(true);
 
   const cabinetTypes = [
-    { key: "cab_small", label: "Small Cabinet" },
-    { key: "cab_tall", label: "Tall Cabinet" },
-    { key: "cab_drawer", label: "Drawer/Corner" },
-    { key: "cab_special", label: "Special Cabinet" },
+    { key: "cab_small", label: "Small cabinet" },
+    { key: "cab_tall", label: "Tall cabinet" },
+    { key: "cab_drawer", label: "Drawer / corner" },
+    { key: "cab_special", label: "Special cabinet" },
   ];
 
   const cncItems = [
-    { key: "cnc_colour", label: "Colour Board" },
+    { key: "cnc_colour", label: "Colour board" },
     { key: "cnc_mdf", label: "MDF" },
     { key: "cnc_carcass", label: "Carcass" },
   ];
 
   useEffect(() => {
     loadTodayEntry();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const loadTodayEntry = async () => {
@@ -288,34 +556,26 @@ function FloorLogDashboard() {
     }
   };
 
-  const increment = (key: string) => {
-    setCounts((prev) => ({
-      ...prev,
-      [key]: (prev[key] || 0) + 1,
-    }));
-  };
+  const increment = (key: string) =>
+    setCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
 
-  const decrement = (key: string) => {
-    setCounts((prev) => ({
-      ...prev,
-      [key]: Math.max(0, (prev[key] || 0) - 1),
-    }));
-  };
+  const decrement = (key: string) =>
+    setCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
 
   const submitLog = async () => {
     setSaving(true);
     setMessage("");
     try {
       const today = new Date().toISOString().split("T")[0];
-      await api.post("/entries", {
-        date: today,
-        counts,
-        note,
-      });
-      setMessage("✓ Daily log saved successfully!");
+      await api.post("/entries", { date: today, counts, note });
+      setOk(true);
+      setMessage("Daily log saved.");
       setTimeout(() => setMessage(""), 3000);
     } catch (err: any) {
-      setMessage("✗ Failed to save: " + (err.response?.data?.detail || "Server error"));
+      setOk(false);
+      setMessage(
+        "Failed to save: " + (err.response?.data?.detail || "Server error")
+      );
     } finally {
       setSaving(false);
     }
@@ -324,18 +584,25 @@ function FloorLogDashboard() {
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="p-4 pb-28 space-y-6">
-      {/* Today's Summary */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg p-6 shadow">
-        <div className="text-sm opacity-90">Today's Production</div>
-        <div className="text-4xl font-bold">{total}</div>
-        <div className="text-sm opacity-90 mt-1">Total units</div>
-      </div>
+    <div className="page">
+      <WorkshopHero
+        eyebrow="Today on the floor"
+        title={`Good to see you, ${user?.name?.split(" ")[0] ?? ""}`}
+        subtitle="Log what you finish as you go — it only takes a moment."
+      >
+        <div className="mt-6 flex items-end gap-6 border-t border-white/15 pt-5">
+          <HeroFigure label="Units today" value={String(total)} primary />
+          <p className="pb-1.5 text-sm text-white/55">
+            {total === 0
+              ? "Nothing logged yet today."
+              : "Nice work — keep it going."}
+          </p>
+        </div>
+      </WorkshopHero>
 
-      {/* Cabinets Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">🪚 Cabinets</h2>
-        <div className="space-y-3">
+      <section className="mb-6">
+        <SectionHeading>Cabinets</SectionHeading>
+        <div className="space-y-2.5">
           {cabinetTypes.map((type) => (
             <Counter
               key={type.key}
@@ -346,12 +613,11 @@ function FloorLogDashboard() {
             />
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* CNC Section */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">⚙️ CNC</h2>
-        <div className="space-y-3">
+      <section className="mb-6">
+        <SectionHeading>CNC</SectionHeading>
+        <div className="space-y-2.5">
           {cncItems.map((item) => (
             <Counter
               key={item.key}
@@ -362,40 +628,39 @@ function FloorLogDashboard() {
             />
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Notes */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Add any notes about today's work..."
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
-          rows={3}
-        />
-      </div>
+      <section className="mb-6">
+        <div className="field">
+          <label htmlFor="note" className="label">
+            Notes
+          </label>
+          <textarea
+            id="note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Anything worth flagging about today's work…"
+            className="input resize-none"
+            rows={3}
+          />
+        </div>
+      </section>
 
-      {/* Message */}
       {message && (
-        <div
-          className={`p-4 rounded-lg text-center font-medium ${
-            message.startsWith("✓")
-              ? "bg-green-50 text-green-700 border border-green-200"
-              : "bg-red-50 text-red-700 border border-red-200"
-          }`}
-        >
-          {message}
+        <div className={ok ? "alert-success mb-4" : "alert-danger mb-4"} role="status">
+          <Icon name={ok ? "check" : "alert"} size={17} className="mt-px" />
+          <span>{message}</span>
         </div>
       )}
 
-      {/* Submit Button */}
       <button
         onClick={submitLog}
         disabled={saving}
-        className="w-full py-4 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors disabled:bg-gray-400 text-lg"
+        className="btn-primary w-full text-base"
+        style={{ minHeight: "3.25rem" }}
       >
-        {saving ? "Saving..." : "📤 Submit Daily Log"}
+        <Icon name="uploads" size={19} />
+        {saving ? "Saving…" : "Submit daily log"}
       </button>
     </div>
   );
@@ -413,21 +678,35 @@ function Counter({
   onDecrement: () => void;
 }) {
   return (
-    <div className="bg-white rounded-lg p-4 border border-gray-200 flex items-center justify-between">
-      <span className="font-medium text-gray-900">{label}</span>
-      <div className="flex items-center gap-4">
+    <div className="card flex items-center justify-between gap-3 px-4 py-3">
+      <span className="text-[0.9375rem] font-medium text-ink-900">{label}</span>
+      <div className="flex items-center gap-2">
+        {/* 44px targets — usable with gloves on. */}
         <button
           onClick={onDecrement}
-          className="w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-lg font-bold transition-colors"
+          disabled={value === 0}
+          aria-label={`Decrease ${label}`}
+          className="grid h-11 w-11 place-items-center rounded-lg border border-ink-300 bg-white text-ink-700 transition-colors hover:bg-ink-100 active:scale-95 disabled:opacity-35"
         >
-          −
+          <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M5 12h14" />
+          </svg>
         </button>
-        <span className="w-12 text-center text-2xl font-bold text-orange-600">{value}</span>
+        <span
+          className={`w-12 text-center font-heading text-2xl font-semibold tabular ${
+            value > 0 ? "text-brand-orange" : "text-ink-300"
+          }`}
+        >
+          {value}
+        </span>
         <button
           onClick={onIncrement}
-          className="w-10 h-10 rounded-lg bg-orange-200 hover:bg-orange-300 flex items-center justify-center text-lg font-bold transition-colors text-orange-700"
+          aria-label={`Increase ${label}`}
+          className="grid h-11 w-11 place-items-center rounded-lg bg-brand-orange text-white transition-colors hover:bg-brand-orange-dark active:scale-95"
         >
-          +
+          <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
       </div>
     </div>

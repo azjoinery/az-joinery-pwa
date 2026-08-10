@@ -185,12 +185,12 @@ export default function DesignPage() {
 
   if (!selectedJobId) {
     return (
-      <div className="p-4 pb-28 space-y-4">
-        <h1 className="text-2xl font-bold text-gray-900">📐 Design Workflow</h1>
-        <p className="text-sm text-gray-600">Select a job to view or update its design stage, checklist, and variations.</p>
+      <div className="page space-y-4">
+        <h1 className="page-title">Design Workflow</h1>
+        <p className="page-subtitle">Select a job to view or update its design stage, checklist, and variations.</p>
 
         {jobsError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{jobsError}</div>
+          <div className="alert-danger">{jobsError}</div>
         )}
 
         {jobsLoading ? (
@@ -603,17 +603,17 @@ function JobDesignDetail({
   const totalIncGst = sellExGst + gst;
 
   return (
-    <div className="p-4 pb-28 space-y-4">
+    <div className="page space-y-4">
       <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to design jobs</button>
 
       <div>
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-gray-900">#{currentJob.jobNum} — {currentJob.client}</h1>
+          <h1 className="page-title">#{currentJob.jobNum} — {currentJob.client}</h1>
           {isReleased && (
             <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-medium">Released</span>
           )}
         </div>
-        <p className="text-sm text-gray-600">{currentJob.projectName}</p>
+        <p className="page-subtitle">{currentJob.projectName}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -675,7 +675,7 @@ function JobDesignDetail({
       {tab === "stages" && (
         <div className="space-y-2">
           {stageError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{stageError}</div>
+            <div className="alert-danger">{stageError}</div>
           )}
           {STAGES.map((stage, i) => (
             <button
@@ -706,7 +706,7 @@ function JobDesignDetail({
       {tab === "checklist" && (
         <div className="space-y-2">
           {checklistError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{checklistError}</div>
+            <div className="alert-danger">{checklistError}</div>
           )}
           <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
             <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${checklistProgress}%` }}></div>
@@ -744,7 +744,7 @@ function JobDesignDetail({
         <div className="space-y-4">
           <button
             onClick={() => setShowVarForm(!showVarForm)}
-            className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+            className="btn-primary w-full"
           >
             + New Variation
           </button>
@@ -793,7 +793,7 @@ function JobDesignDetail({
                 </div>
               </div>
               {varError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{varError}</div>
+                <div className="alert-danger">{varError}</div>
               )}
               <button
                 onClick={addVariation}
@@ -812,7 +812,7 @@ function JobDesignDetail({
           ) : (
             <div className="space-y-2">
               {variations.map((v) => (
-                <div key={v.id} className="bg-white p-4 rounded-lg border border-gray-200">
+                <div key={v.id} className="card card-pad">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <span className="text-xs text-gray-400">{v.variationNumber}</span>
@@ -832,13 +832,13 @@ function JobDesignDetail({
         <div className="space-y-4">
           <button
             onClick={() => setShowMatForm(!showMatForm)}
-            className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+            className="btn-primary w-full"
           >
             + New Material Line
           </button>
 
           {matError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{matError}</div>
+            <div className="alert-danger">{matError}</div>
           )}
 
           {showMatForm && (
@@ -910,7 +910,7 @@ function JobDesignDetail({
           ) : (
             <div className="space-y-2">
               {materials.map((m) => (
-                <div key={m.id} className="bg-white p-4 rounded-lg border border-gray-200">
+                <div key={m.id} className="card card-pad">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <span className="text-xs text-gray-400">{m.category}</span>
@@ -948,13 +948,13 @@ function JobDesignDetail({
         <div className="space-y-4">
           <button
             onClick={() => setShowTaskForm(!showTaskForm)}
-            className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+            className="btn-primary w-full"
           >
             + New Task
           </button>
 
           {taskError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{taskError}</div>
+            <div className="alert-danger">{taskError}</div>
           )}
 
           {showTaskForm && (
@@ -1021,7 +1021,7 @@ function JobDesignDetail({
           ) : (
             <div className="space-y-2">
               {designTasks.map((t) => (
-                <div key={t.id} className="bg-white p-4 rounded-lg border border-gray-200">
+                <div key={t.id} className="card card-pad">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <p className={`text-sm font-medium ${t.status === "Completed" ? "text-gray-400 line-through" : "text-gray-900"}`}>
@@ -1054,7 +1054,7 @@ function JobDesignDetail({
       {tab === "activity" && (
         <div className="space-y-2">
           {activityError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{activityError}</div>
+            <div className="alert-danger">{activityError}</div>
           )}
           {activityLoading ? (
             <div className="text-center py-8 text-gray-600">Loading activity...</div>
@@ -1097,21 +1097,21 @@ function JobDesignDetail({
           ) : (
             <>
               {releaseError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{releaseError}</div>
+                <div className="alert-danger">{releaseError}</div>
               )}
 
               {releaseChecking ? (
                 <div className="text-center py-8 text-gray-600">Checking release requirements...</div>
               ) : (
-                <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="card card-pad">
                   <p className="text-sm font-semibold text-gray-900 mb-2">Release requirements</p>
                   {releaseCheck && releaseCheck.missing.length === 0 ? (
-                    <p className="text-sm text-green-700">✓ All requirements met — ready to release.</p>
+                    <p className="text-sm text-green-700">All requirements met — ready to release.</p>
                   ) : (
                     <ul className="space-y-1">
                       {(releaseCheck?.missing || []).map((m) => (
                         <li key={m} className="text-sm text-amber-700 flex items-start gap-2">
-                          <span>⚠️</span><span>{m}</span>
+                          <span aria-hidden="true">!</span><span>{m}</span>
                         </li>
                       ))}
                     </ul>

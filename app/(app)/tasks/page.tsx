@@ -49,15 +49,15 @@ export default function TasksPage() {
   });
 
   const statusIcons: Record<string, string> = {
-    "Not Started": "⭕",
-    "In Progress": "🔄",
+    "Not Started": "",
+    "In Progress": "",
     "Waiting for...": "⏸️",
-    "Completed": "✅",
+    "Completed": "",
   };
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">My Tasks</h1>
+    <div className="page space-y-4">
+      <h1 className="page-title">My Tasks</h1>
 
       {/* Filter */}
       <div className="flex gap-2">
@@ -110,8 +110,8 @@ export default function TasksPage() {
                   </h3>
                   <p className="text-sm text-gray-600 mt-1">{task.description}</p>
                   <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                    <span>{statusIcons[task.status] || "❓"} {task.status}</span>
-                    {task.dueDate && <span>📅 {task.dueDate}</span>}
+                    <span>{task.status}</span>
+                    {task.dueDate && <span>Due {task.dueDate}</span>}
                   </div>
                 </div>
               </div>

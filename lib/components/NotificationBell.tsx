@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Icon, { type IconName } from "@/lib/components/Icon";
 import { api } from "@/lib/api/client";
 
 interface Notification {
@@ -17,19 +18,22 @@ interface Notification {
   createdAt: string;
 }
 
-const CATEGORY_ICON: Record<string, string> = {
-  job: "🧰",
-  task: "✅",
-  flag: "🚩",
-  report: "📋",
-  stock: "📦",
-  design: "📐",
-  override: "⚠️",
-  lead: "🎯",
-  followup: "📞",
-  materials: "📦",
-  query: "💬",
-  "query.reply": "💬",
+// Notification category -> app icon. Keeps the panel consistent with the
+// rest of the UI instead of mixing in emoji, which render differently on
+// every device and read as unprofessional in a business tool.
+const CATEGORY_ICON: Record<string, IconName> = {
+  job: "jobs",
+  task: "tasks",
+  flag: "alert",
+  report: "invoices",
+  stock: "inventory",
+  design: "design",
+  override: "alert",
+  lead: "sales",
+  followup: "messages",
+  materials: "inventory",
+  query: "messages",
+  "query.reply": "messages",
 };
 
 // Best-effort mapping from a notification's entity type to a page in this
@@ -166,25 +170,25 @@ export default function NotificationBell() {
     <div className="relative" ref={panelRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 rounded-full hover:bg-gray-100 transition-colors"
-        aria-label="Notifications"
+        className="relative grid h-9 w-9 place-items-center rounded-lg text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900"
+        aria-label={unread > 0 ? `Notifications (${unread} unread)` : "Notifications"}
       >
-        <span className="text-xl">🔔</span>
+        <Icon name="notifications" size={20} />
         {unread > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-orange-500 text-white text-[10px] font-bold rounded-full">
+          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand-orange px-1 text-[10px] font-bold text-white ring-2 ring-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-[70vh] flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900 text-sm">Notifications</h3>
+        <div className="absolute right-0 z-30 mt-2 flex max-h-[70vh] w-80 max-w-[90vw] flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-pop">
+          <div className="flex items-center justify-between border-b border-ink-200 px-4 py-3">
+            <h3 className="font-heading text-sm font-semibold text-ink-900">Notifications</h3>
             {items.some((n) => !n.read) && (
               <button
                 onClick={markAllRead}
-                className="text-xs text-orange-600 hover:text-orange-800 font-medium"
+                className="text-xs font-semibold text-brand-orange hover:text-brand-orange-dark"
               >
                 Mark all read
               </button>
@@ -193,47 +197,49 @@ export default function NotificationBell() {
 
           <div className="overflow-y-auto flex-1">
             {loading && (
-              <div className="p-4 text-center text-sm text-gray-500">Loading...</div>
+              <div className="p-4 text-center text-sm text-ink-500">Loading...</div>
             )}
             {error && (
-              <div className="p-3 m-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+              <div className="alert-danger m-2">
                 {error}
               </div>
             )}
             {!loading && !error && items.length === 0 && (
-              <div className="p-6 text-center text-sm text-gray-500">
+              <div className="p-6 text-center text-sm text-ink-500">
                 No notifications yet.
               </div>
             )}
             {!loading &&
               items.map((n) => {
-                const icon = CATEGORY_ICON[n.category || n.kind || ""] || "🔔";
+                const icon = CATEGORY_ICON[n.category || n.kind || ""] || "notifications";
                 return (
                   <div
                     key={n.id}
                     onClick={() => handleItemClick(n)}
-                    className={`flex gap-2 px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors ${
-                      !n.read ? "bg-orange-50/50" : ""
+                    className={`flex cursor-pointer gap-2.5 border-b border-ink-100 px-4 py-3 transition-colors hover:bg-ink-50 ${
+                      !n.read ? "bg-brand-orange/[0.05]" : ""
                     }`}
                   >
-                    <div className="text-lg leading-none pt-0.5">{icon}</div>
+                    <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ink-100 text-ink-500">
+                      <Icon name={icon} size={16} />
+                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <p className={`text-sm ${!n.read ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                        <p className={`text-sm ${!n.read ? "font-semibold text-ink-900" : "text-ink-700"}`}>
                           {n.title}
                         </p>
                         {!n.read && (
-                          <span className="w-2 h-2 rounded-full bg-orange-500 mt-1.5 flex-shrink-0" />
+                          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-orange" />
                         )}
                       </div>
                       {n.body && (
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.body}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">{n.body}</p>
                       )}
                       <div className="flex items-center justify-between mt-1">
-                        <span className="text-[11px] text-gray-400">{timeAgo(n.createdAt)}</span>
+                        <span className="text-[11px] text-ink-400">{timeAgo(n.createdAt)}</span>
                         <button
                           onClick={(e) => removeNotification(n.id, e)}
-                          className="text-[11px] text-gray-400 hover:text-red-600"
+                          className="text-[11px] text-ink-400 transition-colors hover:text-danger"
                         >
                           Remove
                         </button>

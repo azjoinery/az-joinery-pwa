@@ -1,12 +1,30 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
-import { navItemsForRole, isPathAllowedForRole, landingPageForRole } from "@/lib/roles";
+import {
+  navItemsForRole,
+  isPathAllowedForRole,
+  landingPageForRole,
+  NAV_GROUP_ORDER,
+  type NavGroup,
+} from "@/lib/roles";
 import NotificationBell from "@/lib/components/NotificationBell";
+import Icon from "@/lib/components/Icon";
+import { BrandLockup, LogoMark } from "@/lib/components/Brand";
 
+/**
+ * App shell.
+ *
+ * Desktop / tablet ≥ lg : fixed dark charcoal sidebar rail, grouped nav.
+ * Mobile               : sticky top bar + fixed bottom tab bar (thumb reach).
+ *
+ * The dark rail keeps the workshop-tool feel and lets the orange accent do
+ * the wayfinding, while the content area stays light and high-contrast for
+ * reading in a bright workshop.
+ */
 export default function ProtectedLayout({
   children,
 }: {
@@ -15,112 +33,324 @@ export default function ProtectedLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { user, initialized, me, logout } = useAuth();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push("/auth/login");
-  };
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     me();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Wait until the initial session check has actually completed before
-  // deciding there's no user — otherwise every fresh page load briefly
-  // sees user=null and incorrectly bounces a logged-in user back to login.
+  // Wait for the initial session check before bouncing — otherwise a fresh
+  // page load briefly sees user=null and kicks a logged-in user to login.
   useEffect(() => {
-    if (initialized && !user) {
-      router.push("/auth/login");
-    }
+    if (initialized && !user) router.push("/auth/login");
   }, [user, initialized, router]);
 
-  // Logged in, but this role isn't allowed on this page (e.g. they typed
-  // the URL directly) — send them to their own landing page instead.
-  // This is a UX/routing convenience, not the security boundary: the API
-  // independently enforces what each role can actually see/do regardless
-  // of what page the frontend renders.
+  // Logged in but not allowed here (e.g. typed the URL) — send them home.
+  // UX convenience only; the API is the real security boundary.
   useEffect(() => {
     if (initialized && user && !isPathAllowedForRole(pathname, user.role)) {
       router.replace(landingPageForRole(user.role));
     }
   }, [user, initialized, pathname, router]);
 
-  if (!initialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin inline-block w-8 h-8 border-4 border-orange-300 border-t-orange-500 rounded-full"></div>
-          <p className="text-gray-600 mt-4">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const navItems = useMemo(
+    () => navItemsForRole(user?.role),
+    [user?.role]
+  );
 
-  if (!user) {
-    return null;
-  }
+  const grouped = useMemo(() => {
+    const map = new Map<NavGroup, typeof navItems>();
+    for (const item of navItems) {
+      if (!map.has(item.group)) map.set(item.group, []);
+      map.get(item.group)!.push(item);
+    }
+    return NAV_GROUP_ORDER.filter((g) => map.has(g)).map((g) => ({
+      group: g,
+      items: map.get(g)!,
+    }));
+  }, [navItems]);
 
-  if (!isPathAllowedForRole(pathname, user.role)) {
-    // Redirect is in flight (see effect above) — render nothing in the meantime.
-    return null;
-  }
+  const handleLogout = async () => {
+    setSigningOut(true);
+    await logout();
+    router.push("/auth/login");
+  };
 
-  const navItems = navItemsForRole(user.role);
+  if (!initialized) return <BootSplash />;
+  if (!user) return null;
+  if (!isPathAllowedForRole(pathname, user.role)) return null;
+
+  const roleLabel = user.role.replace(/_/g, " ");
+  const initials = (user.name || "?")
+    .split(" ")
+    .slice(0, 2)
+    .map((p: string) => p[0])
+    .join("")
+    .toUpperCase();
+
+  // On phones the bottom bar can only hold ~5 items comfortably.
+  const primaryMobile = navItems.slice(0, 4);
+  const overflowMobile = navItems.slice(4);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">AZ Joinery</h1>
-            <p className="text-sm text-gray-600">Welcome, {user.name}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <NotificationBell />
-            <span className="inline-block px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
-              {user.role.replace("_", " ").toUpperCase()}
-            </span>
-          </div>
+    <div className="min-h-screen bg-ink-50">
+      {/* ================= DESKTOP SIDEBAR ================= */}
+      <aside
+        className="fixed inset-y-0 left-0 z-40 hidden w-rail flex-col bg-ink-950 lg:flex"
+        aria-label="Main navigation"
+      >
+        {/* Brand */}
+        <div className="flex h-16 items-center border-b border-white/[0.07] px-5">
+          <Link href={landingPageForRole(user.role)} className="rounded-md">
+            <BrandLockup tone="light" markSize={30} />
+          </Link>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto">{children}</main>
+        {/* Nav groups */}
+        <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+          {grouped.map(({ group, items }) => (
+            <div key={group}>
+              <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-white/30">
+                {group}
+              </div>
+              <div className="space-y-0.5">
+                {items.map((item) => {
+                  const active = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.key}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`nav-item relative ${active ? "nav-item-active" : ""}`}
+                    >
+                      <Icon
+                        name={item.icon}
+                        size={19}
+                        className={active ? "text-brand-orange" : ""}
+                      />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
 
-      {/* Footer Navigation — items shown depend on the logged-in user's role */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
-        <div className="overflow-x-auto">
-          <div className="flex justify-start">
-            {navItems.map((item) => (
-              <NavLink key={item.key} href={item.href} label={item.label} icon={item.icon} />
-            ))}
-            <button
-              onClick={handleLogout}
-              className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"
-            >
-              <div className="text-lg">↪️</div>
-              <div className="text-xs text-gray-700 font-medium">Logout</div>
-            </button>
+        {/* User + sign out */}
+        <div className="border-t border-white/[0.07] p-3">
+          <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-white">
+                {user.name}
+              </div>
+              <div className="truncate text-[11px] capitalize text-white/45">
+                {roleLabel}
+              </div>
+            </div>
           </div>
+          <button
+            onClick={handleLogout}
+            disabled={signingOut}
+            className="nav-item mt-1 w-full disabled:opacity-50"
+          >
+            <Icon name="logout" size={19} />
+            <span>{signingOut ? "Signing out…" : "Sign out"}</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* ================= MAIN COLUMN ================= */}
+      <div className="lg:pl-rail">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/85 backdrop-blur-md">
+          <div className="flex h-16 items-center justify-between gap-3 px-4 md:px-8">
+            {/* Mobile brand (sidebar is hidden) */}
+            <Link
+              href={landingPageForRole(user.role)}
+              className="flex items-center gap-2.5 lg:hidden"
+            >
+              <LogoMark size={28} />
+              <span className="font-heading text-[17px] font-semibold tracking-tight text-ink-900">
+                AZ Joinery
+              </span>
+            </Link>
+
+            {/* Desktop greeting */}
+            <div className="hidden min-w-0 lg:block">
+              <p className="truncate font-heading text-[15px] font-semibold text-ink-900">
+                {greeting()}, {user.name?.split(" ")[0]}
+              </p>
+              <p className="text-xs text-ink-500">{todayLong()}</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <span className="hidden rounded-full bg-ink-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-600 sm:inline-block">
+                {roleLabel}
+              </span>
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white lg:hidden">
+                {initials}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="pb-nav lg:pb-0">{children}</main>
+      </div>
+
+      {/* ================= MOBILE BOTTOM BAR ================= */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.07] bg-ink-950 lg:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        aria-label="Main navigation"
+      >
+        <div className="flex items-stretch">
+          {primaryMobile.map((item) => {
+            const active = pathname === item.href;
+            return (
+              <Link
+                key={item.key}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={`nav-tab ${active ? "nav-tab-active" : ""}`}
+              >
+                <Icon
+                  name={item.icon}
+                  size={21}
+                  className={active ? "text-brand-orange" : ""}
+                />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+          <MoreMenu
+            items={overflowMobile}
+            pathname={pathname}
+            onLogout={handleLogout}
+          />
         </div>
       </nav>
-
-      {/* Spacing for bottom nav */}
-      <div className="h-20"></div>
     </div>
   );
 }
 
-function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
+/* ---------------------------------------------------------------- helpers */
+
+function MoreMenu({
+  items,
+  pathname,
+  onLogout,
+}: {
+  items: { key: string; href: string; label: string; icon: any }[];
+  pathname: string;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const activeInMenu = items.some((i) => i.href === pathname);
+
   return (
-    <Link
-      href={href}
-      className="flex-shrink-0 py-3 px-4 hover:bg-gray-50 active:bg-orange-50 transition-colors border-b-2 border-transparent hover:border-orange-300 text-center min-w-fit"
-    >
-      <div className="text-lg">{icon}</div>
-      <div className="text-xs text-gray-700 font-medium">{label}</div>
-    </Link>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={`nav-tab ${activeInMenu ? "nav-tab-active" : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Icon
+          name="menu"
+          size={21}
+          className={activeInMenu ? "text-brand-orange" : ""}
+        />
+        <span>More</span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-ink-950/60 animate-fade-in lg:hidden"
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="rounded-t-2xl bg-white p-4 pb-8 animate-fade-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink-200" />
+            <div className="grid grid-cols-3 gap-2">
+              {items.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    onClick={() => setOpen(false)}
+                    className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-xs font-medium transition-colors ${
+                      active
+                        ? "border-brand-orange bg-brand-orange/10 text-brand-orange-dark"
+                        : "border-ink-200 text-ink-700 hover:bg-ink-50"
+                    }`}
+                  >
+                    <Icon name={item.icon} size={22} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+            <button
+              onClick={onLogout}
+              className="btn-secondary mt-3 w-full"
+            >
+              <Icon name="logout" size={18} />
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
+}
+
+/** Full-screen branded splash while the session is being checked. */
+function BootSplash() {
+  return (
+    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-ink-950">
+      <div
+        className="absolute inset-0 bg-cover bg-center opacity-25"
+        style={{ backgroundImage: "url(/workshop/hero-wide-sm.jpg)" }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/85 to-ink-950" />
+      <div className="relative flex flex-col items-center gap-6">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/logo.png"
+          alt="AZ Joinery"
+          width={96}
+          className="animate-fade-up"
+        />
+        <div className="h-0.5 w-28 overflow-hidden rounded-full bg-white/15">
+          <div className="h-full w-1/2 animate-pulse rounded-full bg-brand-orange" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function todayLong() {
+  return new Date().toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
 }

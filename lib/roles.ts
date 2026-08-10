@@ -16,6 +16,10 @@
 // unmapped role (falls through to the SAFE_DEFAULT below) rather than
 // giving it special-cased access.
 
+import type { IconName } from "@/lib/components/Icon";
+
+export type NavGroup = "Workshop" | "Commercial" | "Business";
+
 export type Role =
   | "managing_director"
   | "manager"
@@ -41,18 +45,29 @@ export type PageKey =
   | "team"
   | "accounts";
 
-export const PAGES: Record<PageKey, { href: string; label: string; icon: string }> = {
-  dashboard: { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  jobs: { href: "/jobs", label: "Jobs", icon: "📋" },
-  tasks: { href: "/tasks", label: "Tasks", icon: "✓" },
-  inventory: { href: "/inventory", label: "Inventory", icon: "📦" },
-  sales: { href: "/sales", label: "Sales", icon: "🎯" },
-  analytics: { href: "/analytics", label: "Analytics", icon: "📈" },
-  invoices: { href: "/invoices", label: "Invoices", icon: "💰" },
-  design: { href: "/design", label: "Design", icon: "📐" },
-  team: { href: "/team", label: "Team", icon: "👥" },
-  accounts: { href: "/accounts", label: "Accounts", icon: "🏦" },
+// `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
+// emoji. Emojis render differently on every OS and read as unprofessional in
+// a business tool, so the nav uses a single consistent stroked SVG set.
+// `group` drives the section dividers in the desktop sidebar.
+export const PAGES: Record<
+  PageKey,
+  { href: string; label: string; icon: IconName; group: NavGroup }
+> = {
+  dashboard: { href: "/dashboard", label: "Dashboard", icon: "dashboard", group: "Workshop" },
+  jobs:      { href: "/jobs",      label: "Jobs",      icon: "jobs",      group: "Workshop" },
+  tasks:     { href: "/tasks",     label: "Tasks",     icon: "tasks",     group: "Workshop" },
+  design:    { href: "/design",    label: "Design",    icon: "design",    group: "Workshop" },
+  inventory: { href: "/inventory", label: "Inventory", icon: "inventory", group: "Workshop" },
+
+  sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Commercial" },
+  invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Commercial" },
+  accounts:  { href: "/accounts",  label: "Accounts",  icon: "accounts",  group: "Commercial" },
+  analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Commercial" },
+
+  team:      { href: "/team",      label: "Team",      icon: "team",      group: "Business" },
 };
+
+export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
 
 const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "sales", "analytics", "invoices", "design", "accounts"];
 

@@ -123,8 +123,8 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">💰 Invoicing & Quotes</h1>
+    <div className="page space-y-4">
+      <h1 className="page-title">Invoicing &amp; Quotes</h1>
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -162,7 +162,7 @@ export default function InvoicesPage() {
         <div className="space-y-4">
           <button
             onClick={() => setShowForm(!showForm)}
-            className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+            className="btn-primary w-full"
           >
             + New {tab === "quotes" ? "Quote" : "Invoice"}
           </button>
@@ -226,7 +226,7 @@ export default function InvoicesPage() {
               </div>
 
               {saveError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>
+                <div className="alert-danger">{saveError}</div>
               )}
 
               <button
@@ -336,7 +336,7 @@ function InvoiceDetail({
   };
 
   return (
-    <div className="p-4 pb-28">
+    <div className="page">
       <button onClick={onBack} className="text-orange-600 font-medium mb-4 hover:underline">
         ← Back
       </button>
@@ -344,10 +344,10 @@ function InvoiceDetail({
       <div className="bg-white rounded-lg p-6 border border-gray-200 space-y-4">
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">{doc.client}</h1>
+            <h1 className="page-title">{doc.client}</h1>
             <span className="inline-block mt-1 text-xs bg-gray-100 px-2 py-1 rounded">{doc.status}</span>
           </div>
-          <span className="text-2xl font-bold text-gray-900">${doc.total.toLocaleString()}</span>
+          <span className="page-title">${doc.total.toLocaleString()}</span>
         </div>
 
         {isInvoice && (
@@ -417,7 +417,7 @@ function InvoiceDetail({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
                 {payError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{payError}</div>
+                  <div className="alert-danger">{payError}</div>
                 )}
                 <div className="flex gap-2">
                   <button

@@ -160,8 +160,8 @@ export default function InventoryPage() {
   const canRebuild = !!user && TOP_ROLES.includes(user.role);
 
   return (
-    <div className="p-4 pb-28 space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">📦 Inventory Management</h1>
+    <div className="page space-y-4">
+      <h1 className="page-title">Inventory</h1>
 
       {kpis && (
         <div className="grid grid-cols-2 gap-3">
@@ -310,7 +310,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
     <div className="space-y-4">
       <button
         onClick={() => setShowForm(!showForm)}
-        className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600"
+        className="btn-primary w-full"
       >
         + Add Material
       </button>
@@ -443,7 +443,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
           {addError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{addError}</div>
+            <div className="alert-danger">{addError}</div>
           )}
           <button
             onClick={handleAddStock}
@@ -457,7 +457,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
 
       {lowStockItems.length > 0 && (
         <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-          <h3 className="font-semibold text-red-900 mb-2">⚠️ Low Stock Alert</h3>
+          <h3 className="font-semibold text-red-900 mb-2">Low stock alert</h3>
           {lowStockItems.map((item) => (
             <div key={item.id} className="text-sm text-red-700 mb-1">
               {item.name}: {item.on_hand_qty} {item.unit} (Reorder: {item.reorder_point})
@@ -481,7 +481,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <h3 className="font-semibold text-gray-900">{stock.name}</h3>
-                  <p className="text-sm text-gray-600">{stock.category}</p>
+                  <p className="page-subtitle">{stock.category}</p>
                 </div>
                 <span
                   className={`px-2 py-1 rounded text-sm font-medium ${
@@ -494,7 +494,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
               <div className="text-xs text-gray-500 space-y-1">
                 <div>Supplier: {stock.supplier || "—"}</div>
                 {stock.unit_cost !== undefined && <div>Cost: ${stock.unit_cost}/unit</div>}
-                {stock.negativeStock && <div className="text-red-600 font-medium">⚠ Negative stock</div>}
+                {stock.negativeStock && <div className="text-red-600 font-medium">Negative stock</div>}
               </div>
             </button>
           ))
@@ -594,7 +594,7 @@ function StockItemDetail({
           <label className="text-xs text-gray-500">Storage location</label>
           <input type="text" value={storageLocation} onChange={(e) => setStorageLocation(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
         </div>
-        {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+        {saveError && <div className="alert-danger">{saveError}</div>}
         <button onClick={save} disabled={saving || !name.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
           {saving ? "Saving..." : "Save Changes"}
         </button>
@@ -602,7 +602,7 @@ function StockItemDetail({
 
       <div className="bg-white p-4 rounded-lg border border-red-200 space-y-2">
         <p className="text-sm font-semibold text-red-700">Danger zone</p>
-        {deleteError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{deleteError}</div>}
+        {deleteError && <div className="alert-danger">{deleteError}</div>}
         {!confirmDelete ? (
           <button onClick={() => setConfirmDelete(true)} className="text-sm text-red-600 hover:text-red-800">
             Remove this item from active stock
@@ -705,7 +705,7 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + Log Offcut
       </button>
 
@@ -726,7 +726,7 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
             <input type="text" placeholder="Storage location" value={form.storageLocation} onChange={(e) => setForm({ ...form, storageLocation: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
             <input type="number" placeholder="Estimated value ($)" value={form.estimatedValue} onChange={(e) => setForm({ ...form, estimatedValue: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           </div>
-          {addError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{addError}</div>}
+          {addError && <div className="alert-danger">{addError}</div>}
           <button onClick={addOffcut} disabled={adding || !form.description.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {adding ? "Saving..." : "Save Offcut"}
           </button>
@@ -740,7 +740,7 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
       ) : (
         <div className="space-y-2">
           {offcuts.map((o) => (
-            <div key={o.id} className="bg-white p-4 rounded-lg border border-gray-200">
+            <div key={o.id} className="card card-pad">
               <div className="flex justify-between items-start mb-1">
                 <div>
                   <span className="text-xs text-gray-400">{o.offcutId}</span>
@@ -850,7 +850,7 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + Record Transaction
       </button>
 
@@ -871,7 +871,7 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
           </div>
           <input type="text" placeholder="Job ID (optional)" value={form.jobId} onChange={(e) => setForm({ ...form, jobId: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           <input type="text" placeholder="Reason / notes" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={recordTx} disabled={saving || !form.itemId || form.qty <= 0} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Saving..." : "Record Transaction"}
           </button>
@@ -889,7 +889,7 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
               <div className="flex justify-between items-start">
                 <div>
                   <span className="text-sm font-medium text-gray-900 capitalize">{tx.txType}</span>
-                  <span className="text-sm text-gray-600"> · {itemName(tx.itemId)} · {tx.qty}</span>
+                  <span className="page-subtitle"> · {itemName(tx.itemId)} · {tx.qty}</span>
                 </div>
                 <span className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleString()}</span>
               </div>
@@ -981,7 +981,7 @@ function OrdersTab() {
 
   return (
     <div className="space-y-4">
-      <button onClick={() => setShowForm(!showForm)} className="w-full py-2 bg-orange-500 text-white font-medium rounded-lg hover:bg-orange-600">
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
         + Create Purchase Order
       </button>
 
@@ -1023,7 +1023,7 @@ function OrdersTab() {
             ))}
             <button onClick={addLine} className="text-xs text-orange-600 hover:text-orange-800">+ Add line</button>
           </div>
-          {saveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{saveError}</div>}
+          {saveError && <div className="alert-danger">{saveError}</div>}
           <button onClick={createPO} disabled={saving || !supplier.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {saving ? "Creating..." : "Create Purchase Order"}
           </button>
@@ -1041,7 +1041,7 @@ function OrdersTab() {
               <div className="flex justify-between items-start">
                 <div>
                   <span className="font-semibold text-gray-900">{po.poNumber}</span>
-                  <p className="text-sm text-gray-600">{po.supplier}</p>
+                  <p className="page-subtitle">{po.supplier}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS_COLORS[po.status] || "bg-gray-100"}`}>{po.status}</span>
               </div>
@@ -1099,11 +1099,11 @@ function POrderDetail({ po, onBack, onUpdated }: { po: PurchaseOrder; onBack: ()
     <div className="space-y-4">
       <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to purchase orders</button>
 
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
+      <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{po.poNumber}</h2>
-            <p className="text-sm text-gray-600">{po.supplier}</p>
+            <p className="page-subtitle">{po.supplier}</p>
           </div>
           <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS_COLORS[po.status] || "bg-gray-100"}`}>{po.status}</span>
         </div>
@@ -1154,7 +1154,7 @@ function POrderDetail({ po, onBack, onUpdated }: { po: PurchaseOrder; onBack: ()
               />
             </div>
           ))}
-          {receiveError && <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{receiveError}</div>}
+          {receiveError && <div className="alert-danger">{receiveError}</div>}
           <button onClick={submitReceive} disabled={receiveSaving} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
             {receiveSaving ? "Saving..." : "Confirm Receipt"}
           </button>
@@ -1197,7 +1197,7 @@ function SuppliersTab() {
       ) : (
         <div className="space-y-2">
           {suppliers.map((s) => (
-            <div key={s.name} className="bg-white p-4 rounded-lg border border-gray-200">
+            <div key={s.name} className="card card-pad">
               <div className="flex justify-between items-start mb-1">
                 <span className="font-semibold text-gray-900">{s.name}</span>
                 {s.totalValue !== undefined && <span className="text-sm font-semibold text-gray-900">${s.totalValue.toLocaleString()}</span>}
