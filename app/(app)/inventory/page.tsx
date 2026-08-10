@@ -991,17 +991,33 @@ function OrdersTab() {
           <input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           <div className="space-y-2">
             <p className="text-xs text-gray-500">Line items</p>
+            <p className="text-xs text-gray-400">Link a line to a stock item so Receive Goods can update on-hand quantity and cost automatically. Leave as "Ad-hoc" for one-off items not tracked in Stock.</p>
             {lines.map((line, i) => (
               <div key={i} className="grid grid-cols-12 gap-1 items-center">
+                <select value={line.stockItemId || ""}
+                  onChange={(e) => {
+                    const item = stocks.find((s) => s.id === e.target.value);
+                    updateLine(i, {
+                      stockItemId: e.target.value || undefined,
+                      description: item && !line.description.trim() ? (item.name || "(unnamed item)") : line.description,
+                      unitCost: item && !line.unitCost ? (item.unit_cost || 0) : line.unitCost,
+                    });
+                  }}
+                  className="col-span-3 px-2 py-1.5 text-sm border border-gray-300 rounded">
+                  <option value="">Ad-hoc (no stock link)</option>
+                  {stocks.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name || "(unnamed item)"}</option>
+                  ))}
+                </select>
                 <input type="text" placeholder="Description" value={line.description}
                   onChange={(e) => updateLine(i, { description: e.target.value })}
-                  className="col-span-6 px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                  className="col-span-4 px-2 py-1.5 text-sm border border-gray-300 rounded" />
                 <input type="number" placeholder="Qty" value={line.qty}
                   onChange={(e) => updateLine(i, { qty: parseFloat(e.target.value) || 0 })}
                   className="col-span-2 px-2 py-1.5 text-sm border border-gray-300 rounded" />
                 <input type="number" placeholder="Cost" value={line.unitCost}
                   onChange={(e) => updateLine(i, { unitCost: parseFloat(e.target.value) || 0 })}
-                  className="col-span-3 px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                  className="col-span-2 px-2 py-1.5 text-sm border border-gray-300 rounded" />
                 <button onClick={() => removeLine(i)} className="col-span-1 text-red-500 text-xs">✕</button>
               </div>
             ))}
@@ -1096,7 +1112,10 @@ function POrderDetail({ po, onBack, onUpdated }: { po: PurchaseOrder; onBack: ()
         <div className="mt-3 space-y-1">
           {po.lines.map((l) => (
             <div key={l.id} className="flex justify-between text-sm border-t border-gray-100 pt-1">
-              <span className="text-gray-900">{l.description}</span>
+              <span className="text-gray-900">
+                {l.description}
+                {!l.stockItemId && <span className="ml-1 text-xs text-gray-400">(ad-hoc — won't update stock)</span>}
+              </span>
               <span className="text-gray-600">{l.qtyReceived ?? 0}/{l.qty} {l.unit}</span>
             </div>
           ))}
