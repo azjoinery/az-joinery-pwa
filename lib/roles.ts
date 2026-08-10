@@ -37,7 +37,8 @@ export type PageKey =
   | "sales"
   | "analytics"
   | "invoices"
-  | "design";
+  | "design"
+  | "team";
 
 export const PAGES: Record<PageKey, { href: string; label: string; icon: string }> = {
   dashboard: { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -48,18 +49,26 @@ export const PAGES: Record<PageKey, { href: string; label: string; icon: string 
   analytics: { href: "/analytics", label: "Analytics", icon: "📈" },
   invoices: { href: "/invoices", label: "Invoices", icon: "💰" },
   design: { href: "/design", label: "Design", icon: "📐" },
+  team: { href: "/team", label: "Team", icon: "👥" },
 };
 
 const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "sales", "analytics", "invoices", "design"];
+
+// Managing Director, General Manager, and Admin get everything Department
+// Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
+// withheld from department_manager — the backend already treats that role
+// as legacy/non-assignable (roles/catalog marks it "assignable": false),
+// and user management is sensitive enough to keep to the top 3 roles only.
+const ALL_PAGES_PLUS_TEAM: PageKey[] = [...ALL_PAGES, "team"];
 
 // Pages each role can reach, in nav display order. First entry = landing
 // page after login. Roles not listed here fall back to a minimal safe
 // default (dashboard + tasks) rather than accidentally granting broad access.
 const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
-  managing_director: ALL_PAGES,
-  manager: ALL_PAGES,
+  managing_director: ALL_PAGES_PLUS_TEAM,
+  manager: ALL_PAGES_PLUS_TEAM,
   department_manager: ALL_PAGES,
-  admin: ALL_PAGES,
+  admin: ALL_PAGES_PLUS_TEAM,
 
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
   supervisor: ["dashboard", "jobs", "tasks", "inventory"],

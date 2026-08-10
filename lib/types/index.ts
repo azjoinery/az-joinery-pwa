@@ -3,9 +3,24 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "cabinet_maker" | "installer" | "supervisor" | "manager" | "office" | "drafter" | "admin" | "managing_director";
+  role:
+    | "managing_director"
+    | "manager"
+    | "department_manager"
+    | "admin"
+    | "supervisor"
+    | "office"
+    | "drafter"
+    | "cabinet_maker"
+    | "installer"
+    | "contractor"
+    | "employee"
+    | "designer";
   active: boolean;
+  color?: string;
+  createdAt?: string;
   permissionMatrix?: Record<string, Record<string, boolean>>;
+  permissions?: string[];
 }
 
 export interface LoginPayload {
