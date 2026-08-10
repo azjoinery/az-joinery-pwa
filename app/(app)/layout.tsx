@@ -13,7 +13,7 @@ import {
 } from "@/lib/roles";
 import NotificationBell from "@/lib/components/NotificationBell";
 import Icon from "@/lib/components/Icon";
-import { BrandLockup, LogoMark } from "@/lib/components/Brand";
+import { BrandLockup, LogoFull, LogoMark } from "@/lib/components/Brand";
 
 /**
  * App shell.
@@ -321,17 +321,11 @@ function BootSplash() {
     <div className="relative grid min-h-screen place-items-center overflow-hidden bg-ink-950">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-25"
-        style={{ backgroundImage: "url(/workshop/hero-wide-sm.jpg)" }}
+        style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/85 to-ink-950" />
       <div className="relative flex flex-col items-center gap-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/logo.png"
-          alt="AZ Joinery"
-          width={96}
-          className="animate-fade-up"
-        />
+        <LogoFull size={104} plaque className="animate-fade-up" />
         <div className="h-0.5 w-28 overflow-hidden rounded-full bg-white/15">
           <div className="h-full w-1/2 animate-pulse rounded-full bg-brand-orange" />
         </div>

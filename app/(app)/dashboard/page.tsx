@@ -47,8 +47,14 @@ function WorkshopHero({
 }) {
   return (
     <section className="relative isolate mb-6 overflow-hidden rounded-card bg-ink-950">
+      {/* Art direction: the square crop frames the team at the bench, which
+          reads far better in a narrow column; the wide crop shows the floor. */}
       <div
-        className="absolute inset-0 bg-cover bg-center"
+        className="absolute inset-0 bg-cover bg-center md:hidden"
+        style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
+      />
+      <div
+        className="absolute inset-0 hidden bg-cover bg-center md:block"
         style={{ backgroundImage: "url(/workshop/hero-wide.jpg)" }}
       />
       <div className="img-scrim absolute inset-0" />

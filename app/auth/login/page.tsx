@@ -38,7 +38,7 @@ export default function LoginPage() {
         <div className="img-scrim absolute inset-0" />
 
         <div className="relative z-10 flex w-full flex-col justify-between p-12 xl:p-16">
-          <LogoFull size={112} />
+          <LogoFull size={112} plaque />
 
           <div className="max-w-lg">
             <h1 className="font-heading text-4xl font-semibold leading-[1.15] tracking-tight text-white xl:text-5xl">
@@ -70,11 +70,11 @@ export default function LoginPage() {
         <div className="relative isolate overflow-hidden bg-ink-950 px-6 py-9 lg:hidden">
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: "url(/workshop/hero-wide-sm.jpg)" }}
+            style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
           />
           <div className="img-scrim absolute inset-0" />
           <div className="relative z-10 flex items-center gap-3">
-            <LogoMark size={40} />
+            <LogoMark size={40} plaque />
             <div>
               <div className="font-heading text-xl font-semibold tracking-tight text-white">
                 AZ Joinery
