@@ -38,7 +38,8 @@ export type PageKey =
   | "analytics"
   | "invoices"
   | "design"
-  | "team";
+  | "team"
+  | "accounts";
 
 export const PAGES: Record<PageKey, { href: string; label: string; icon: string }> = {
   dashboard: { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -50,9 +51,10 @@ export const PAGES: Record<PageKey, { href: string; label: string; icon: string 
   invoices: { href: "/invoices", label: "Invoices", icon: "💰" },
   design: { href: "/design", label: "Design", icon: "📐" },
   team: { href: "/team", label: "Team", icon: "👥" },
+  accounts: { href: "/accounts", label: "Accounts", icon: "🏦" },
 };
 
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "sales", "analytics", "invoices", "design"];
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "sales", "analytics", "invoices", "design", "accounts"];
 
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
@@ -74,7 +76,7 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   supervisor: ["dashboard", "jobs", "tasks", "inventory"],
 
   // Materials/purchasing-facing role.
-  office: ["inventory", "invoices", "dashboard"],
+  office: ["inventory", "invoices", "accounts", "dashboard"],
 
   // Design module only — matches the original app (Design + Profile only).
   drafter: ["design"],
