@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, Plus, Edit, Trash2, Eye, EyeOff, TrendingUp, Calendar, DollarSign, AlertCircle } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/lib/store/auth';
 
 const AccountsPage: React.FC = () => {
   const { user } = useAuth();
