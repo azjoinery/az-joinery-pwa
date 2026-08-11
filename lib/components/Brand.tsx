@@ -45,7 +45,7 @@ export function LogoMark({
 
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-lg bg-[#F7F7F5] ring-1 ring-black/5 ${className}`}
+      className={`inline-flex w-fit shrink-0 items-center justify-center self-start rounded-lg bg-[#F7F7F5] ring-1 ring-black/5 ${className}`}
       style={{ padding: Math.max(4, size * 0.16) }}
     >
       {img}
@@ -77,7 +77,7 @@ export function LogoFull({
 
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-xl bg-[#F7F7F5] ring-1 ring-black/5 ${className}`}
+      className={`inline-flex w-fit shrink-0 items-center justify-center self-start rounded-xl bg-[#F7F7F5] ring-1 ring-black/5 ${className}`}
       style={{ padding: Math.max(10, size * 0.14) }}
     >
       {img}
