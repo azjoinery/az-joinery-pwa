@@ -14,6 +14,7 @@ import {
 import NotificationBell from "@/lib/components/NotificationBell";
 import Icon from "@/lib/components/Icon";
 import { BrandLockup, LogoFull, LogoMark } from "@/lib/components/Brand";
+import InstallPrompt from "@/lib/components/InstallPrompt";
 
 /**
  * App shell.
@@ -202,6 +203,9 @@ export default function ProtectedLayout({
 
         <main className="pb-nav lg:pb-0">{children}</main>
       </div>
+
+      {/* Install-to-device prompt. Renders nothing when already installed. */}
+      <InstallPrompt />
 
       {/* ================= MOBILE BOTTOM BAR ================= */}
       <nav

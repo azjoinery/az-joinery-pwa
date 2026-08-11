@@ -1,14 +1,19 @@
 {
-  "name": "AZ Joinery — Management System",
+  "id": "/",
+  "name": "AZ Joinery",
   "short_name": "AZ Joinery",
-  "description": "Production, sales and accounts management for AZ Joinery.",
-  "start_url": "/dashboard",
+  "description": "Production, sales and accounts management for AZ Joinery — custom kitchens, wardrobes and cabinetry.",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#1A1A18",
   "theme_color": "#1A1A18",
-  "orientation": "portrait-primary",
+  "lang": "en-AU",
+  "dir": "ltr",
   "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/brand/icon-192.png",
@@ -23,10 +28,30 @@
       "purpose": "any"
     },
     {
-      "src": "/brand/icon-512.png",
+      "src": "/brand/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/dashboard",
+      "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Jobs",
+      "short_name": "Jobs",
+      "url": "/jobs",
+      "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Tasks",
+      "short_name": "Tasks",
+      "url": "/tasks",
+      "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

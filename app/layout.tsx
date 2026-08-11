@@ -9,7 +9,15 @@ import "./globals.css";
  * globals.css fall back to the native system UI font if the request is ever
  * blocked, so the app always renders. */
 
+// Production origin. metadataBase makes every relative OG/icon URL resolve to
+// the real domain instead of the Vercel-generated hostname.
+const APP_ORIGIN = "https://app.azjoinery.com.au";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(APP_ORIGIN),
+  // Internal business tool — keep the whole subdomain out of search results.
+  // This has no effect on azjoinery.com.au, which is a separate site.
+  robots: { index: false, follow: false, nocache: true },
   title: {
     default: "AZ Joinery",
     template: "%s · AZ Joinery",
@@ -32,6 +40,14 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   formatDetection: { telephone: false },
+  openGraph: {
+    type: "website",
+    siteName: "AZ Joinery",
+    title: "AZ Joinery",
+    description: "Production, sales and accounts management for AZ Joinery.",
+    url: APP_ORIGIN,
+    locale: "en_AU",
+  },
 };
 
 export const viewport: Viewport = {
