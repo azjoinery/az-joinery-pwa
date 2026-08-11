@@ -1,6 +1,12 @@
 /**
  * Art-directed workshop photography.
  *
+ * NOTE the ?v=2 on every asset URL. next.config.mjs serves images with
+ * `max-age=31536000, immutable`, and these files reuse the filenames of the
+ * ones they replace — without a changed URL, every browser that already has
+ * the old images cached would keep showing them for a year. Bump the version
+ * whenever an image is replaced in place.
+ *
  * The workshop photo is a wide, deep interior. Shrinking the desktop crop down
  * to a phone throws away the machinery and leaves a grey wall, so each
  * breakpoint gets its own crop of the same frame:
@@ -40,9 +46,9 @@ export function WorkshopImage({
   if (variant === "square") {
     return (
       <picture className={className}>
-        <source srcSet="/workshop/square.webp" type="image/webp" />
+        <source srcSet="/workshop/square.webp?v=2" type="image/webp" />
         <img
-          src="/workshop/square.jpg"
+          src="/workshop/square.jpg?v=2"
           alt={alt}
           className="h-full w-full object-cover"
           style={{ objectPosition: FOCUS }}
@@ -59,21 +65,21 @@ export function WorkshopImage({
       {/* Phones: vertical crop. */}
       <source
         media="(max-width: 767px)"
-        srcSet="/workshop/hero-tall.webp"
+        srcSet="/workshop/hero-tall.webp?v=2"
         type="image/webp"
       />
-      <source media="(max-width: 767px)" srcSet="/workshop/hero-tall.jpg" />
+      <source media="(max-width: 767px)" srcSet="/workshop/hero-tall.jpg?v=2" />
       {/* Tablets: balanced landscape. */}
       <source
         media="(max-width: 1023px)"
-        srcSet="/workshop/hero-tablet.webp"
+        srcSet="/workshop/hero-tablet.webp?v=2"
         type="image/webp"
       />
-      <source media="(max-width: 1023px)" srcSet="/workshop/hero-tablet.jpg" />
+      <source media="(max-width: 1023px)" srcSet="/workshop/hero-tablet.jpg?v=2" />
       {/* Desktop: full width of the floor. */}
-      <source srcSet="/workshop/hero-wide.webp" type="image/webp" />
+      <source srcSet="/workshop/hero-wide.webp?v=2" type="image/webp" />
       <img
-        src="/workshop/hero-wide.jpg"
+        src="/workshop/hero-wide.jpg?v=2"
         alt={alt}
         className="h-full w-full object-cover"
         style={{ objectPosition: FOCUS }}

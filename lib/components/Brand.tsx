@@ -39,11 +39,15 @@ export function LogoMark({
 }) {
   const img = (
     <img
-      src="/brand/logo-mark.webp"
+      src="/brand/logo-mark.webp?v=2"
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * MARK_RATIO)}
-      style={{ width: size, height: size * MARK_RATIO, objectFit: "contain" }}
+      style={{
+        width: size,
+        height: Math.round(size * MARK_RATIO),
+        objectFit: "contain",
+      }}
       className="block max-w-full select-none"
       draggable={false}
     />
@@ -73,13 +77,15 @@ export function LogoFull({
 }) {
   const img = (
     <img
-      src="/brand/logo.webp"
+      src="/brand/logo.webp?v=2"
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * FULL_RATIO)}
       style={{
+        // Rounded: a fractional height puts the artwork on a sub-pixel
+        // boundary and the browser resamples it, softening the edges.
         width: size,
-        height: size * FULL_RATIO,
+        height: Math.round(size * FULL_RATIO),
         objectFit: "contain",
       }}
       className="block max-w-full select-none"

@@ -117,7 +117,7 @@ export default function InstallPrompt() {
           <div className="flex items-start gap-3 p-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/brand/logo-mark.webp"
+              src="/brand/logo-mark.webp?v=2"
               alt=""
               width={40}
               height={40}
