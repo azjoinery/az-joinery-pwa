@@ -1,24 +1,31 @@
 /**
  * AZ Joinery brand lockups.
  *
- * The logo is a dimensional render built for light backgrounds — its charcoal
- * half disappears if you drop it straight onto dark chrome or photography.
- * Rather than recolour it (which destroys the bevels), dark surfaces get the
- * mark on a light plaque, the way the real signage reads against a dark wall.
+ * Artwork: the official dimensional render, supplied as a clean transparent
+ * PNG/WebP. The earlier file had a cream drop-shadow halo baked into its
+ * semi-transparent pixels, which is why dark surfaces previously needed a light
+ * "plaque" tile behind the mark. The current artwork composites correctly on
+ * both dark and light, so the plaque is off by default — the mark now sits
+ * directly on the surface, which is what the brand guide asks for.
  *
- *   <LogoMark />              symbol, light background
- *   <LogoMark plaque />       symbol on a light tile, for dark backgrounds
+ * `plaque` is retained for the rare case of placing the mark on busy midtone
+ * photography, where a tile still helps separation.
+ *
+ *   <LogoMark />              symbol (square)
  *   <LogoFull />              symbol + JOINERY wordmark (login, splash, print)
  *   <BrandLockup tone="…" />  symbol + typeset name (app header / rail)
  *
  * Clear space: each lockup reserves padding of ~20% of its height. Never
- * stretch, rotate, or recolour the artwork.
+ * stretch, rotate, or recolour the artwork — the sizing below is driven off a
+ * single dimension with the other derived, so the ratio can never drift.
  */
 
 /* eslint-disable @next/next/no-img-element */
 
-const MARK_RATIO = 788 / 768; // height / width of logo-mark.png
-const FULL_RATIO = 1338 / 1024; // height / width of logo.png
+/** logo-mark is a square crop of the official artwork. */
+const MARK_RATIO = 1; // height / width
+/** logo is the full lockup, trimmed to its own bounds: 405 x 512. */
+const FULL_RATIO = 512 / 405; // height / width
 
 export function LogoMark({
   size = 32,
@@ -26,7 +33,7 @@ export function LogoMark({
   className = "",
 }: {
   size?: number;
-  /** Wrap in a light tile so the charcoal half stays legible on dark surfaces. */
+  /** Wrap in a light tile. Only needed over busy midtone photography. */
   plaque?: boolean;
   className?: string;
 }) {
@@ -36,12 +43,13 @@ export function LogoMark({
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * MARK_RATIO)}
-      className="select-none"
+      style={{ width: size, height: size * MARK_RATIO, objectFit: "contain" }}
+      className="block max-w-full select-none"
       draggable={false}
     />
   );
 
-  if (!plaque) return <span className={className}>{img}</span>;
+  if (!plaque) return <span className={`inline-flex shrink-0 ${className}`}>{img}</span>;
 
   return (
     <span
@@ -58,6 +66,7 @@ export function LogoFull({
   plaque = false,
   className = "",
 }: {
+  /** Width in px; height is derived so the artwork can never be squashed. */
   size?: number;
   plaque?: boolean;
   className?: string;
@@ -68,12 +77,17 @@ export function LogoFull({
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * FULL_RATIO)}
-      className="select-none"
+      style={{
+        width: size,
+        height: size * FULL_RATIO,
+        objectFit: "contain",
+      }}
+      className="block max-w-full select-none"
       draggable={false}
     />
   );
 
-  if (!plaque) return <span className={className}>{img}</span>;
+  if (!plaque) return <span className={`inline-flex shrink-0 ${className}`}>{img}</span>;
 
   return (
     <span
@@ -86,8 +100,8 @@ export function LogoFull({
 }
 
 /**
- * Header lockup: mark + typeset name. On a dark rail the mark gets its plaque
- * and the name sits in white; pass tone="dark" for light backgrounds.
+ * Header lockup: mark + typeset name. On a dark rail the name sits in white;
+ * pass tone="dark" for light backgrounds.
  */
 export function BrandLockup({
   tone = "light",
@@ -105,7 +119,7 @@ export function BrandLockup({
 
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <LogoMark size={markSize} plaque={onDark} />
+      <LogoMark size={markSize} />
       <div className="leading-none">
         <div
           className={`font-heading font-semibold tracking-tight ${

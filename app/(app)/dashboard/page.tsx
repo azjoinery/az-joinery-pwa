@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 import { DailyEntry, Job } from "@/lib/types";
 import Icon, { type IconName } from "@/lib/components/Icon";
+import { WorkshopImage } from "@/lib/components/WorkshopImage";
 
 // Roles that get the executive/management overview instead of the
 // floor-worker daily-log form. This mirrors the old app's split between
@@ -47,15 +48,12 @@ function WorkshopHero({
 }) {
   return (
     <section className="relative isolate mb-6 overflow-hidden rounded-card bg-ink-950">
-      {/* Art direction: the square crop frames the team at the bench, which
-          reads far better in a narrow column; the wide crop shows the floor. */}
-      <div
-        className="absolute inset-0 bg-cover bg-center md:hidden"
-        style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
-      />
-      <div
-        className="absolute inset-0 hidden bg-cover bg-center md:block"
-        style={{ backgroundImage: "url(/workshop/hero-wide.jpg)" }}
+      {/* Art direction lives in <WorkshopImage>: each breakpoint gets its own
+          crop of the same frame rather than one image squeezed to fit. */}
+      <WorkshopImage
+        variant="hero"
+        priority
+        className="absolute inset-0 block h-full w-full"
       />
       <div className="img-scrim absolute inset-0" />
 

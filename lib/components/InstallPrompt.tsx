@@ -120,8 +120,8 @@ export default function InstallPrompt() {
               src="/brand/logo-mark.webp"
               alt=""
               width={40}
-              height={41}
-              className="mt-0.5 shrink-0 rounded-lg bg-[#F7F7F5] p-1 ring-1 ring-black/5"
+              height={40}
+              className="mt-0.5 h-10 w-10 shrink-0 object-contain"
             />
             <div className="min-w-0 flex-1">
               <p className="font-heading text-[15px] font-semibold text-ink-900">

@@ -325,7 +325,7 @@ function BootSplash() {
     <div className="relative grid min-h-screen place-items-center overflow-hidden bg-ink-950">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-25"
-        style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
+        style={{ backgroundImage: "url(/workshop/team-square-sm.webp)" }}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/85 to-ink-950" />
       <div className="relative flex flex-col items-center gap-6">

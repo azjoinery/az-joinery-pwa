@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/store/auth";
 import { landingPageForRole } from "@/lib/roles";
 import Icon from "@/lib/components/Icon";
 import { LogoFull, LogoMark } from "@/lib/components/Brand";
+import { WorkshopImage } from "@/lib/components/WorkshopImage";
 
 /**
  * Split login: workshop photography on the left (desktop), form on the right.
@@ -29,16 +30,15 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col lg:flex-row">
       {/* ---------------- Brand / imagery panel ---------------- */}
       <section className="relative isolate hidden overflow-hidden bg-ink-950 lg:flex lg:w-[52%] xl:w-[56%]">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url(/workshop/hero-wide.jpg)" }}
-          role="img"
-          aria-label="The AZ Joinery workshop floor"
+        <WorkshopImage
+          variant="hero"
+          priority
+          className="absolute inset-0 block h-full w-full"
         />
         <div className="img-scrim absolute inset-0" />
 
         <div className="relative z-10 flex w-full flex-col justify-between p-12 xl:p-16">
-          <LogoFull size={112} plaque />
+          <LogoFull size={104} />
 
           <div className="max-w-lg">
             <h1 className="font-heading text-4xl font-semibold leading-[1.15] tracking-tight text-white xl:text-5xl">
@@ -68,13 +68,15 @@ export default function LoginPage() {
       <section className="flex flex-1 flex-col bg-white">
         {/* Mobile branded header */}
         <div className="relative isolate overflow-hidden bg-ink-950 px-6 py-9 lg:hidden">
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: "url(/workshop/team-square-sm.jpg)" }}
+          <WorkshopImage
+            variant="square"
+            priority
+            alt=""
+            className="absolute inset-0 block h-full w-full"
           />
           <div className="img-scrim absolute inset-0" />
           <div className="relative z-10 flex items-center gap-3">
-            <LogoMark size={40} plaque />
+            <LogoMark size={40} />
             <div>
               <div className="font-heading text-xl font-semibold tracking-tight text-white">
                 AZ Joinery
