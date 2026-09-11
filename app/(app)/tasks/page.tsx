@@ -10,7 +10,9 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
-
+   const [showForm, setShowForm] = useState(false);
+   const [formData, setFormData] = useState({ title: "", description: "", dueDate: "" });
+   const [adding, setAdding] = useState(false);
   useEffect(() => {
     loadTasks();
   }, [user?.id]);
@@ -54,7 +56,26 @@ export default function TasksPage() {
     "Waiting for...": "⏸️",
     "Completed": "",
   };
-
+   const handleAddTask = async () => {
+     if (!formData.title.trim()) return;
+     setAdding(true);
+     try {
+       const newTask = await api.post<Task>("/tasks", {
+         title: formData.title,
+         description: formData.description,
+         dueDate: formData.dueDate || undefined,
+         assigneeId: user?.id,
+         status: "In Progress",
+       });
+       if (newTask) setTasks([...tasks, newTask]);
+       setFormData({ title: "", description: "", dueDate: "" });
+       setShowForm(false);
+     } catch (err) {
+       console.error("Failed to add task");
+     } finally {
+       setAdding(false);
+     }
+   };
   return (
     <div className="page space-y-4">
       <h1 className="page-title">My Tasks</h1>
@@ -75,7 +96,17 @@ export default function TasksPage() {
           </button>
         ))}
       </div>
+   <button onClick={() => setShowForm(!showForm)} className="btn-primary">+ Add Task</button>
 
+   {showForm && (
+     <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 space-y-3">
+       <input type="text" placeholder="Task title" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+       <textarea placeholder="Description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" rows={2} />
+       <input type="date" value={formData.dueDate} onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+       <button onClick={handleAddTask} disabled={adding} className="btn-primary w-full">{adding ? "Adding..." : "Add Task"}</button>
+       <button onClick={() => setShowForm(false)} className="w-full px-4 py-2 border rounded-lg">Cancel</button>
+     </div>
+   )}
       {/* Tasks List */}
       {loading ? (
         <div className="text-center py-8 text-gray-600">Loading tasks...</div>
