@@ -1,3 +1,7 @@
+
+inventorypage.txt
+
+100%
 "use client";
 
 import { useState, useEffect } from "react";
@@ -18,7 +22,13 @@ interface StockItem {
   thickness?: string;
   size?: string;
   on_hand_qty: number;
+  // Quantity model: on_hand (physical) - reserved (allocated to jobs) = available.
+  // `reserved_qty` is the new canonical field; `allocated_qty` is the legacy name
+  // the backend may still send. `available_qty` is computed by the backend when
+  // present, otherwise derived on the client (see availableQty()).
+  reserved_qty?: number;
   allocated_qty?: number;
+  available_qty?: number;
   on_order_qty?: number;
   unit: string;
   reorder_point: number;
@@ -29,6 +39,20 @@ interface StockItem {
   active?: boolean;
   negativeStock?: boolean;
   version?: number;
+}
+
+// Reserved = units allocated to jobs but not yet consumed.
+// Prefers the new `reserved_qty`, falls back to legacy `allocated_qty`.
+function reservedQty(item: Pick<StockItem, "reserved_qty" | "allocated_qty">): number {
+  return item.reserved_qty ?? item.allocated_qty ?? 0;
+}
+
+// Available = what can still be reserved for new jobs.
+// Uses the backend's computed `available_qty` when provided, else on_hand - reserved.
+// Never returns a negative number.
+function availableQty(item: StockItem): number {
+  if (typeof item.available_qty === "number") return item.available_qty;
+  return Math.max(0, item.on_hand_qty - reservedQty(item));
 }
 
 interface Catalogs {
@@ -492,6 +516,14 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
                 </span>
               </div>
               <div className="text-xs text-gray-500 space-y-1">
+                {reservedQty(stock) > 0 && (
+                  <div>
+                    Allocated {reservedQty(stock)} ·{" "}
+                    <span className={availableQty(stock) <= 0 ? "text-red-600 font-medium" : "text-green-700 font-medium"}>
+                      Available {availableQty(stock)}
+                    </span>
+                  </div>
+                )}
                 <div>Supplier: {stock.supplier || "—"}</div>
                 {stock.unit_cost !== undefined && <div>Cost: ${stock.unit_cost}/unit</div>}
                 {stock.negativeStock && <div className="text-red-600 font-medium">Negative stock</div>}
@@ -560,21 +592,25 @@ function StockItemDetail({
       <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to stock</button>
 
       <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-4 gap-3 text-center">
           <div>
             <div className="text-xs text-gray-500">On Hand</div>
             <div className="text-lg font-bold text-gray-900">{item.on_hand_qty}</div>
           </div>
           <div>
             <div className="text-xs text-gray-500">Allocated</div>
-            <div className="text-lg font-bold text-gray-900">{item.allocated_qty ?? 0}</div>
+            <div className="text-lg font-bold text-gray-900">{reservedQty(item)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Available</div>
+            <div className={`text-lg font-bold ${availableQty(item) <= 0 ? "text-red-600" : "text-green-700"}`}>{availableQty(item)}</div>
           </div>
           <div>
             <div className="text-xs text-gray-500">On Order</div>
             <div className="text-lg font-bold text-gray-900">{item.on_order_qty ?? 0}</div>
           </div>
         </div>
-        <p className="text-xs text-gray-400 text-center">On-hand quantity can only change via a recorded transaction (Transactions tab).</p>
+        <p className="text-xs text-gray-400 text-center">On-hand only changes via a recorded transaction. Reserved is material allocated to jobs; Available = On Hand − Reserved.</p>
 
         <div>
           <label className="text-xs text-gray-500">Name</label>
@@ -1218,3 +1254,4 @@ function SuppliersTab() {
     </div>
   );
 }
+Displaying inventorypage.txt.
