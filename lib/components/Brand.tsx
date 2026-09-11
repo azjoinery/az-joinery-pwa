@@ -3,13 +3,16 @@
  *
  * The logo is a dimensional render built for light backgrounds — its charcoal
  * half disappears if you drop it straight onto dark chrome or photography.
- * Rather than recolour it (which destroys the bevels), dark surfaces get the
- * mark on a light plaque, the way the real signage reads against a dark wall.
+ * Dark surfaces therefore use the dedicated light artwork (logo-*-light.png),
+ * which reads cleanly on charcoal with no plaque tile. The legacy `plaque`
+ * prop is kept as a fallback (standard logo on a light tile) in case a
+ * surface ever needs it.
  *
- *   <LogoMark />              symbol, light background
- *   <LogoMark plaque />       symbol on a light tile, for dark backgrounds
- *   <LogoFull />              symbol + JOINERY wordmark (login, splash, print)
- *   <BrandLockup tone="…" />  symbol + typeset name (app header / rail)
+ *   <LogoMark />            symbol, light background
+ *   <LogoMark dark />       light symbol, for dark backgrounds / photography
+ *   <LogoFull />            symbol + JOINERY wordmark (login, splash, print)
+ *   <LogoFull dark />       light full logo, for dark backgrounds
+ *   <BrandLockup tone="…" /> symbol + typeset name (app header / rail)
  *
  * Clear space: each lockup reserves padding of ~20% of its height. Never
  * stretch, rotate, or recolour the artwork.
@@ -22,21 +25,24 @@ const FULL_RATIO = 1338 / 1024; // height / width of logo.png
 
 export function LogoMark({
   size = 32,
+  dark = false,
   plaque = false,
   className = "",
 }: {
   size?: number;
-  /** Wrap in a light tile so the charcoal half stays legible on dark surfaces. */
+  /** Use the light artwork so the mark stays legible on dark surfaces. */
+  dark?: boolean;
+  /** Legacy fallback: wrap the standard mark in a light tile. */
   plaque?: boolean;
   className?: string;
 }) {
   const img = (
     <img
-      src="/brand/logo-mark.webp"
+      src={dark ? "/brand/logo-mark-light.png" : "/brand/logo-mark.webp"}
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * MARK_RATIO)}
-      className="select-none"
+      className="select-none object-contain"
       draggable={false}
     />
   );
@@ -55,20 +61,24 @@ export function LogoMark({
 
 export function LogoFull({
   size = 120,
+  dark = false,
   plaque = false,
   className = "",
 }: {
   size?: number;
+  /** Use the light artwork for dark backgrounds. */
+  dark?: boolean;
+  /** Legacy fallback: standard logo on a light tile. */
   plaque?: boolean;
   className?: string;
 }) {
   const img = (
     <img
-      src="/brand/logo.webp"
+      src={dark ? "/brand/logo-light.png" : "/brand/logo.webp"}
       alt="AZ Joinery"
       width={size}
       height={Math.round(size * FULL_RATIO)}
-      className="select-none"
+      className="select-none object-contain"
       draggable={false}
     />
   );
@@ -86,8 +96,8 @@ export function LogoFull({
 }
 
 /**
- * Header lockup: mark + typeset name. On a dark rail the mark gets its plaque
- * and the name sits in white; pass tone="dark" for light backgrounds.
+ * Header lockup: mark + typeset name. On a dark rail the mark uses the light
+ * artwork and the name sits in white; pass tone="dark" for light backgrounds.
  */
 export function BrandLockup({
   tone = "light",
@@ -105,7 +115,7 @@ export function BrandLockup({
 
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      <LogoMark size={markSize} plaque={onDark} />
+      <LogoMark size={markSize} dark={onDark} />
       <div className="leading-none">
         <div
           className={`font-heading font-semibold tracking-tight ${
