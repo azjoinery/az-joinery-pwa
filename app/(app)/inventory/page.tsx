@@ -1,7 +1,3 @@
-
-inventorypage.txt
-
-100%
 "use client";
 
 import { useState, useEffect } from "react";
@@ -1254,4 +1250,3 @@ function SuppliersTab() {
     </div>
   );
 }
-Displaying inventorypage.txt.
