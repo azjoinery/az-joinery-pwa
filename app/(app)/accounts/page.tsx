@@ -134,7 +134,7 @@ export default function AccountsPage() {
         api.get<Receivable[]>("/accounts/ar"),
         api.get<CreditNote[]>("/accounts/credit-notes"),
         api.get<Job[]>("/jobs"),
-        api.get<Invoice[]>("/invoices"),
+        api.get<Invoice[]>("/accounts/invoices"),
       ]);
       setSchedules(s || []);
       setPayments(p || []);
