@@ -460,7 +460,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
           <h3 className="font-semibold text-red-900 mb-2">Low stock alert</h3>
           {lowStockItems.map((item) => (
             <div key={item.id} className="text-sm text-red-700 mb-1">
-              {item.name}: {item.on_hand_qty} {item.unit} (Reorder: {item.reorder_point})
+              {item.name || "Unnamed item"}: {item.on_hand_qty} {item.unit} (Reorder: {item.reorder_point})
             </div>
           ))}
         </div>
