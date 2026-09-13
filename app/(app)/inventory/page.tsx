@@ -204,18 +204,41 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-        {(["stock", "offcuts", "transactions", "orders", "suppliers"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 font-medium whitespace-nowrap capitalize ${
-              tab === t ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"
-            }`}
-          >
-            {t === "orders" ? "Purchase Orders" : t}
-          </button>
-        ))}
+      {/* The floor only needs Stock + Offcuts. Transactions, purchase orders and
+          suppliers are office work, so they are grouped separately below. */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Workshop</span>
+          <div className="flex gap-2 overflow-x-auto">
+            {(["stock", "offcuts"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap capitalize ${
+                  tab === t ? "bg-orange-600 text-white" : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Office</span>
+          <div className="flex gap-2 overflow-x-auto">
+            {(["transactions", "orders", "suppliers"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap capitalize ${
+                  tab === t ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {t === "orders" ? "Purchase Orders" : t}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} />}
@@ -549,7 +572,39 @@ function StockItemDetail({
   const [reorderPoint, setReorderPoint] = useState(item.reorder_point);
   const [supplier, setSupplier] = useState(item.supplier || "");
   const [storageLocation, setStorageLocation] = useState(item.storageLocation || "");
+  const [onHand, setOnHand] = useState<number>(item.on_hand_qty);
   const [saving, setSaving] = useState(false);
+
+  // Allocate (reserve) stock to a job. Reserving does NOT consume stock — it
+  // earmarks it, so On Hand stays put and Available drops.
+  const [jobs, setJobs] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string }[]>([]);
+  const [allocJob, setAllocJob] = useState("");
+  const [allocQty, setAllocQty] = useState<number>(1);
+  const [allocating, setAllocating] = useState(false);
+  const [allocMsg, setAllocMsg] = useState<string | null>(null);
+  const [allocError, setAllocError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<any[]>("/jobs").then((rows) => setJobs(rows || [])).catch(() => {});
+  }, []);
+
+  const allocate = async () => {
+    setAllocating(true);
+    setAllocError(null);
+    setAllocMsg(null);
+    try {
+      const updated = await api.post<StockItem>(`/stock/items/${item.id}/reserve`, {
+        qty: allocQty,
+        jobId: allocJob,
+      });
+      onUpdated(updated);
+      setAllocMsg(`Allocated ${allocQty} ${item.unit} to the job.`);
+    } catch (err) {
+      setAllocError("Couldn't allocate that — check the quantity and try again.");
+    } finally {
+      setAllocating(false);
+    }
+  };
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -561,6 +616,7 @@ function StockItemDetail({
     try {
       const updated = await api.patch<StockItem>(`/stock/items/${item.id}`, {
         name, reorder_point: reorderPoint, supplier, storageLocation,
+        on_hand_qty: onHand,
       });
       onUpdated(updated);
     } catch (err) {
@@ -606,7 +662,18 @@ function StockItemDetail({
             <div className="text-lg font-bold text-gray-900">{item.on_order_qty ?? 0}</div>
           </div>
         </div>
-        <p className="text-xs text-gray-400 text-center">On-hand only changes via a recorded transaction. Reserved is material allocated to jobs; Available = On Hand − Reserved.</p>
+        <p className="text-xs text-gray-400 text-center">Available = On Hand − Allocated. Allocated is stock earmarked for a job but not yet used.</p>
+
+        <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
+          <label className="text-xs font-semibold text-orange-900">Quantity on hand</label>
+          <input
+            type="number"
+            value={onHand}
+            onChange={(e) => setOnHand(parseFloat(e.target.value) || 0)}
+            className="mt-1 w-full px-3 py-2 border border-orange-300 rounded-lg text-lg font-semibold"
+          />
+          <p className="mt-1 text-[11px] text-orange-700">Type the real count and press Save Changes. The adjustment is recorded for you.</p>
+        </div>
 
         <div>
           <label className="text-xs text-gray-500">Name</label>
@@ -629,6 +696,50 @@ function StockItemDetail({
         {saveError && <div className="alert-danger">{saveError}</div>}
         <button onClick={save} disabled={saving || !name.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
           {saving ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+
+      {/* Allocate to a job — earmarks stock without consuming it. */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
+        <div>
+          <p className="font-semibold text-gray-900">Allocate to a job</p>
+          <p className="text-xs text-gray-500">Sets stock aside for a job. On Hand stays the same; Available goes down.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500">Job</label>
+            <select
+              value={allocJob}
+              onChange={(e) => setAllocJob(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="">Select a job…</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Quantity</label>
+            <input
+              type="number"
+              min={1}
+              value={allocQty}
+              onChange={(e) => setAllocQty(parseFloat(e.target.value) || 0)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+        </div>
+        {allocError && <div className="alert-danger">{allocError}</div>}
+        {allocMsg && <div className="text-sm text-green-700 font-medium">{allocMsg}</div>}
+        <button
+          onClick={allocate}
+          disabled={allocating || !allocJob || allocQty <= 0}
+          className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400"
+        >
+          {allocating ? "Allocating..." : "Allocate to Job"}
         </button>
       </div>
 
