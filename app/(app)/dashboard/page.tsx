@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
-import { DailyEntry, Job } from "@/lib/types";
+import { DailyEntry, EntryMaterial, Job } from "@/lib/types";
 import Icon, { type IconName } from "@/lib/components/Icon";
 
 // Roles that get the executive/management overview instead of the
@@ -79,10 +79,12 @@ function WorkshopHero({
 function HeroFigure({
   label,
   value,
+  subtitle,
   primary = false,
 }: {
   label: string;
   value: string;
+  subtitle?: string;
   primary?: boolean;
 }) {
   return (
@@ -97,6 +99,11 @@ function HeroFigure({
       >
         {value}
       </div>
+      {subtitle && (
+        <div className="mt-1.5 text-xs font-normal text-white/60">
+          {subtitle}
+        </div>
+      )}
     </div>
   );
 }
@@ -324,6 +331,7 @@ function ExecutiveOverview() {
           <HeroFigure
             label="Confirmed sales"
             value={currency(confirmedSales)}
+            subtitle="Won leads value"
             primary
           />
           <HeroFigure label="Outstanding" value={currency(outstanding)} />
@@ -522,6 +530,9 @@ function QuickAction({
    office, and other non-executive roles.
    ========================================================================== */
 
+// Minimal shape for the material picker (the stock list returns much more).
+interface StockPick { id: string; name: string; unit?: string; on_hand_qty?: number }
+
 function FloorLogDashboard() {
   const { user } = useAuth();
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -529,6 +540,11 @@ function FloorLogDashboard() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [ok, setOk] = useState(true);
+
+  // Materials used today — deducted from stock on save (delta-reconciled server-side).
+  const [materials, setMaterials] = useState<EntryMaterial[]>([]);
+  const [stockList, setStockList] = useState<StockPick[]>([]);
+  const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string }[]>([]);
 
   const cabinetTypes = [
     { key: "cab_small", label: "Small cabinet" },
@@ -545,6 +561,10 @@ function FloorLogDashboard() {
 
   useEffect(() => {
     loadTodayEntry();
+    // Pickers for the "Materials used" section (non-fatal if they fail).
+    api.get<StockPick[]>("/stock/items?active=true")
+      .then((rows) => setStockList(rows || [])).catch(() => {});
+    api.get<any[]>("/jobs").then((rows) => setJobList(rows || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -556,11 +576,19 @@ function FloorLogDashboard() {
       if (data) {
         setCounts(data.counts || {});
         setNote(data.note || "");
+        setMaterials(data.materials || []);
       }
     } catch (err) {
       console.log("No entry yet for today");
     }
   };
+
+  const addMaterialRow = () =>
+    setMaterials((prev) => [...prev, { stockItemId: "", jobId: "", qty: 1, wastageQty: 0 }]);
+  const updateMaterialRow = (i: number, patch: Partial<EntryMaterial>) =>
+    setMaterials((prev) => prev.map((m, idx) => (idx === i ? { ...m, ...patch } : m)));
+  const removeMaterialRow = (i: number) =>
+    setMaterials((prev) => prev.filter((_, idx) => idx !== i));
 
   const increment = (key: string) =>
     setCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
@@ -573,9 +601,20 @@ function FloorLogDashboard() {
     setMessage("");
     try {
       const today = new Date().toISOString().split("T")[0];
-      await api.post("/entries", { date: today, counts, note });
+      // Send only complete material rows; the server reconciles them to stock.
+      const cleanMaterials = materials
+        .filter((m) => m.stockItemId && ((m.qty || 0) > 0 || (m.wastageQty || 0) > 0))
+        .map((m) => {
+          const job = jobList.find((j) => j.id === m.jobId);
+          return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
+        });
+      await api.post("/entries", { date: today, counts, note, materials: cleanMaterials });
       setOk(true);
-      setMessage("Daily log saved.");
+      setMessage(
+        cleanMaterials.length > 0
+          ? "Daily log saved — stock updated."
+          : "Daily log saved."
+      );
       setTimeout(() => setMessage(""), 3000);
     } catch (err: any) {
       setOk(false);
@@ -634,6 +673,89 @@ function FloorLogDashboard() {
             />
           ))}
         </div>
+      </section>
+
+      <section className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <SectionHeading>Materials used</SectionHeading>
+          <button
+            type="button"
+            onClick={addMaterialRow}
+            className="text-sm font-medium text-orange-600 hover:text-orange-700"
+          >
+            + Add material
+          </button>
+        </div>
+        {materials.length === 0 ? (
+          <p className="text-sm text-gray-400">
+            Add any boards, edging or hardware you used today and it comes off stock when you save.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {materials.map((m, i) => {
+              const picked = stockList.find((s) => s.id === m.stockItemId);
+              return (
+                <div key={i} className="rounded-lg border border-gray-200 p-3 space-y-2 bg-white">
+                  <div className="grid grid-cols-1 gap-2">
+                    <select
+                      value={m.stockItemId}
+                      onChange={(e) => updateMaterialRow(i, { stockItemId: e.target.value })}
+                      className="input"
+                    >
+                      <option value="">Select material…</option>
+                      {stockList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}{typeof s.on_hand_qty === "number" ? ` (${s.on_hand_qty} ${s.unit || ""} on hand)` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={m.jobId || ""}
+                      onChange={(e) => updateMaterialRow(i, { jobId: e.target.value })}
+                      className="input"
+                    >
+                      <option value="">Select job…</option>
+                      {jobList.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-gray-500">Qty used{picked?.unit ? ` (${picked.unit})` : ""}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={m.qty}
+                        onChange={(e) => updateMaterialRow(i, { qty: parseFloat(e.target.value) || 0 })}
+                        className="input"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Wastage (optional)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={m.wastageQty || 0}
+                        onChange={(e) => updateMaterialRow(i, { wastageQty: parseFloat(e.target.value) || 0 })}
+                        className="input"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeMaterialRow(i)}
+                    className="text-xs text-red-600 hover:text-red-800"
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="mb-6">
