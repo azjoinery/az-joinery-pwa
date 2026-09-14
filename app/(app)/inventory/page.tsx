@@ -584,9 +584,25 @@ function StockItemDetail({
   const [allocMsg, setAllocMsg] = useState<string | null>(null);
   const [allocError, setAllocError] = useState<string | null>(null);
 
+  // Consume ("use on job") — deducts On Hand and frees any matching allocation.
+  const [useJob, setUseJob] = useState("");
+  const [useQty, setUseQty] = useState<number>(1);
+  const [useWastage, setUseWastage] = useState<number>(0);
+  const [using, setUsing] = useState(false);
+  const [useMsg, setUseMsg] = useState<string | null>(null);
+  const [useError, setUseError] = useState<string | null>(null);
+
   useEffect(() => {
     api.get<any[]>("/jobs").then((rows) => setJobs(rows || [])).catch(() => {});
   }, []);
+
+  // Pull the friendly message the backend sends (FastAPI wraps it in `detail`).
+  const backendMsg = (err: any, fallback: string): string => {
+    const d = err?.response?.data?.detail;
+    if (typeof d === "string") return d;
+    if (d?.message) return d.message as string;
+    return fallback;
+  };
 
   const allocate = async () => {
     setAllocating(true);
@@ -600,9 +616,32 @@ function StockItemDetail({
       onUpdated(updated);
       setAllocMsg(`Allocated ${allocQty} ${item.unit} to the job.`);
     } catch (err) {
-      setAllocError("Couldn't allocate that — check the quantity and try again.");
+      setAllocError(backendMsg(err, "Couldn't allocate that — check the quantity and try again."));
     } finally {
       setAllocating(false);
+    }
+  };
+
+  const consume = async () => {
+    setUsing(true);
+    setUseError(null);
+    setUseMsg(null);
+    try {
+      const res = await api.post<{ item: StockItem; warnings?: string[] }>(
+        `/stock/items/${item.id}/consume`,
+        { qty: useQty, wastageQty: useWastage || 0, jobId: useJob },
+      );
+      onUpdated(res.item);
+      let msg = `Used ${useQty} ${item.unit}`;
+      if (useWastage > 0) msg += ` (+${useWastage} wastage)`;
+      msg += " — On Hand updated.";
+      if (res.warnings?.includes("negativeStock")) msg += " ⚠️ Stock is now negative — check the count.";
+      else if (res.warnings?.includes("lowStock")) msg += " ⚠️ Below reorder point.";
+      setUseMsg(msg);
+    } catch (err) {
+      setUseError(backendMsg(err, "Couldn't record that use — check the quantity and try again."));
+    } finally {
+      setUsing(false);
     }
   };
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -740,6 +779,60 @@ function StockItemDetail({
           className="w-full py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400"
         >
           {allocating ? "Allocating..." : "Allocate to Job"}
+        </button>
+      </div>
+
+      {/* Use on a job — consumes stock. On Hand drops, any allocation is freed. */}
+      <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
+        <div>
+          <p className="font-semibold text-gray-900">Use on a job</p>
+          <p className="text-xs text-gray-500">Records material actually used. On Hand goes down and this cost lands on the job.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500">Job</label>
+            <select
+              value={useJob}
+              onChange={(e) => setUseJob(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              <option value="">Select a job…</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Quantity used</label>
+            <input
+              type="number"
+              min={1}
+              value={useQty}
+              onChange={(e) => setUseQty(parseFloat(e.target.value) || 0)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500">Wastage (optional)</label>
+          <input
+            type="number"
+            min={0}
+            value={useWastage}
+            onChange={(e) => setUseWastage(parseFloat(e.target.value) || 0)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+        {useError && <div className="alert-danger">{useError}</div>}
+        {useMsg && <div className="text-sm text-green-700 font-medium">{useMsg}</div>}
+        <button
+          onClick={consume}
+          disabled={using || !useJob || useQty <= 0}
+          className="w-full py-2 bg-teal-700 text-white rounded-lg hover:bg-teal-800 disabled:bg-gray-400"
+        >
+          {using ? "Recording..." : "Record Use"}
         </button>
       </div>
 
