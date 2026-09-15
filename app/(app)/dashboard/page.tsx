@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
@@ -546,6 +546,18 @@ function FloorLogDashboard() {
   const [stockList, setStockList] = useState<StockPick[]>([]);
   const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string }[]>([]);
 
+  // Counter-based materials UI (Slice 1) — Assigned / Record tabs.
+  // Each + / − tap updates local materials state and schedules a debounced save.
+  const [matsTab, setMatsTab] = useState<"assigned" | "record">("record");
+  const [recordDept, setRecordDept] = useState<"CNC" | "Assembly" | "Hardware">("CNC");
+  const [recordJobId, setRecordJobId] = useState<string>("");
+  const [pickerOpen, setPickerOpen] = useState<null | { target: "assigned" | "record"; jobId?: string }>(null);
+  const [pickerQ, setPickerQ] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const materialsRef = useRef(materials);
+  useEffect(() => { materialsRef.current = materials; }, [materials]);
+
   const cabinetTypes = [
     { key: "cab_small", label: "Small cabinet" },
     { key: "cab_tall", label: "Tall cabinet" },
@@ -595,6 +607,65 @@ function FloorLogDashboard() {
 
   const decrement = (key: string) =>
     setCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
+
+  // Debounced save fired by counter taps. Sends the current entry (counts+note+materials)
+  // — the backend reconciles materials by DELTA, so pressing + twice never double-deducts.
+  const scheduleSave = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const rows = materialsRef.current
+          .filter((m) => m.stockItemId && ((m.qty || 0) > 0 || (m.wastageQty || 0) > 0))
+          .map((m) => {
+            const job = jobList.find((j) => j.id === m.jobId);
+            return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
+          });
+        await api.post("/entries", { date: today, counts, note, materials: rows });
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus((s) => (s === "saved" ? "" : s)), 1600);
+      } catch {
+        setSaveStatus("error");
+      }
+    }, 500);
+  };
+
+  // Counter helpers used by both Assigned and Record rows.
+  const bumpMaterial = (rowIdx: number, delta: 1 | -1) => {
+    setMaterials((prev) => {
+      const next = [...prev];
+      const cur = next[rowIdx];
+      if (!cur) return prev;
+      const newQty = Math.max(0, (cur.qty || 0) + delta);
+      next[rowIdx] = { ...cur, qty: newQty };
+      return next;
+    });
+    scheduleSave();
+  };
+  const addMaterialFromCatalogue = (matId: string) => {
+    const already = materials.findIndex(
+      (m) => m.stockItemId === matId
+        && (m.jobId || "") === (pickerOpen?.jobId || (pickerOpen?.target === "record" ? recordJobId : ""))
+    );
+    if (already >= 0) {
+      // If they picked a material already in the list, treat as +1 on that row.
+      bumpMaterial(already, 1);
+    } else {
+      setMaterials((prev) => [
+        ...prev,
+        {
+          stockItemId: matId,
+          jobId: pickerOpen?.jobId || (pickerOpen?.target === "record" ? recordJobId : ""),
+          qty: 1,
+          wastageQty: 0,
+        },
+      ]);
+      scheduleSave();
+    }
+    setPickerOpen(null);
+    setPickerQ("");
+  };
 
   const submitLog = async () => {
     setSaving(true);
@@ -678,82 +749,182 @@ function FloorLogDashboard() {
       <section className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <SectionHeading>Materials used</SectionHeading>
+          <span className="text-xs font-medium" style={{ color: saveStatus === "error" ? "#b91c1c" : "#6b7280" }}>
+            {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved ✓" : saveStatus === "error" ? "Save failed — try again" : ""}
+          </span>
+        </div>
+
+        {/* Assigned / Record tab switch */}
+        <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1">
           <button
             type="button"
-            onClick={addMaterialRow}
-            className="text-sm font-medium text-orange-600 hover:text-orange-700"
+            onClick={() => setMatsTab("assigned")}
+            className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "assigned" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
           >
-            + Add material
+            Assigned
+          </button>
+          <button
+            type="button"
+            onClick={() => setMatsTab("record")}
+            className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "record" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+          >
+            Record
           </button>
         </div>
-        {materials.length === 0 ? (
-          <p className="text-sm text-gray-400">
-            Add any boards, edging or hardware you used today and it comes off stock when you save.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {materials.map((m, i) => {
-              const picked = stockList.find((s) => s.id === m.stockItemId);
+
+        {matsTab === "assigned" && (
+          materials.filter((m) => m.jobId).length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
+              Nothing assigned to you yet today.
+              <div className="mt-1 text-xs">Switch to <b>Record</b> to log ad-hoc work.</div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {materials.map((m, i) => {
+                if (!m.jobId) return null;
+                const stk = stockList.find((s) => s.id === m.stockItemId);
+                const job = jobList.find((j) => j.id === m.jobId);
+                return (
+                  <div key={`a${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
+                      <div className="truncate text-xs text-gray-500">{[job?.jobNum, job?.client || job?.projectName].filter(Boolean).join(" · ") || "No job"}</div>
+                    </div>
+                    <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                      <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
+                      <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                      <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {matsTab === "record" && (
+          <div>
+            {/* Department chips */}
+            <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1">
+              {(["CNC", "Assembly", "Hardware"] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setRecordDept(d)}
+                  className={`flex-1 rounded-md px-3 py-2 text-xs font-semibold ${recordDept === d ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+
+            {/* Optional job */}
+            <div className="mb-3">
+              <label className="mb-1 block text-xs font-semibold text-gray-500">Job (optional)</label>
+              <select
+                value={recordJobId}
+                onChange={(e) => setRecordJobId(e.target.value)}
+                className="input w-full"
+              >
+                <option value="">— no job (general workshop use) —</option>
+                {jobList.map((j) => (
+                  <option key={j.id} value={j.id}>{[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Material counter rows for THIS job (or "no job") */}
+            {(() => {
+              const jobKey = recordJobId || "";
+              const rows = materials
+                .map((m, i) => ({ m, i }))
+                .filter(({ m }) => (m.jobId || "") === jobKey);
+              if (rows.length === 0) {
+                return (
+                  <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-400">
+                    No materials yet. Tap <b>+ Add material</b> below.
+                  </div>
+                );
+              }
               return (
-                <div key={i} className="rounded-lg border border-gray-200 p-3 space-y-2 bg-white">
-                  <div className="grid grid-cols-1 gap-2">
-                    <select
-                      value={m.stockItemId}
-                      onChange={(e) => updateMaterialRow(i, { stockItemId: e.target.value })}
-                      className="input"
-                    >
-                      <option value="">Select material…</option>
-                      {stockList.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}{typeof s.on_hand_qty === "number" ? ` (${s.on_hand_qty} ${s.unit || ""} on hand)` : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={m.jobId || ""}
-                      onChange={(e) => updateMaterialRow(i, { jobId: e.target.value })}
-                      className="input"
-                    >
-                      <option value="">Select job…</option>
-                      {jobList.map((j) => (
-                        <option key={j.id} value={j.id}>
-                          {[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-500">Qty used{picked?.unit ? ` (${picked.unit})` : ""}</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={m.qty}
-                        onChange={(e) => updateMaterialRow(i, { qty: parseFloat(e.target.value) || 0 })}
-                        className="input"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500">Wastage (optional)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={m.wastageQty || 0}
-                        onChange={(e) => updateMaterialRow(i, { wastageQty: parseFloat(e.target.value) || 0 })}
-                        className="input"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeMaterialRow(i)}
-                    className="text-xs text-red-600 hover:text-red-800"
-                  >
-                    Remove
-                  </button>
+                <div className="space-y-2">
+                  {rows.map(({ m, i }) => {
+                    const stk = stockList.find((s) => s.id === m.stockItemId);
+                    const low = stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3;
+                    return (
+                      <div key={`r${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
+                          <div className="truncate text-xs text-gray-500">
+                            {stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}
+                            {low ? " · low" : ""}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                          <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
+                          <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                          <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
-            })}
+            })()}
+
+            <button
+              type="button"
+              onClick={() => { setPickerOpen({ target: "record" }); setPickerQ(""); }}
+              className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+            >
+              + Add material
+            </button>
+          </div>
+        )}
+
+        {/* Material picker modal (dropdown from stock catalogue) */}
+        {pickerOpen && (
+          <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setPickerOpen(null)}>
+            <div className="w-full max-w-md rounded-t-2xl bg-white p-4 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-200 sm:hidden" />
+              <div className="mb-2 text-base font-semibold text-gray-900">Pick a material</div>
+              <input
+                type="search"
+                value={pickerQ}
+                onChange={(e) => setPickerQ(e.target.value)}
+                placeholder="Search materials…"
+                className="input mb-3 w-full"
+                autoFocus
+              />
+              <div className="max-h-72 overflow-y-auto">
+                {stockList
+                  .filter((s) => !pickerQ || s.name.toLowerCase().includes(pickerQ.toLowerCase()))
+                  .map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => addMaterialFromCatalogue(s.id)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left hover:border-gray-300 mb-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-gray-900">{s.name}</div>
+                        <div className="truncate text-xs text-gray-500">{s.unit || ""}{typeof s.on_hand_qty === "number" ? ` · ${s.on_hand_qty} on hand` : ""}</div>
+                      </div>
+                      <span className="text-lg font-bold text-gray-400">+</span>
+                    </button>
+                  ))}
+                {stockList.filter((s) => !pickerQ || s.name.toLowerCase().includes(pickerQ.toLowerCase())).length === 0 && (
+                  <div className="p-6 text-center text-sm text-gray-400">No materials match.</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(null)}
+                className="mt-2 w-full rounded-lg py-3 text-sm font-semibold text-gray-500"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </section>
