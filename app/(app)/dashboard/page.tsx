@@ -16,6 +16,7 @@ const EXECUTIVE_ROLES = new Set([
   "manager",
   "department_manager",
   "admin",
+  "office",
 ]);
 
 export default function DashboardPage() {
