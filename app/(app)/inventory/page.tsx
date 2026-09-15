@@ -385,106 +385,41 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
 
       {showForm && (
         <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-          <input
-            type="text"
-            placeholder="Material name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <select
-              value={formData.stockType}
-              onChange={(e) => {
-                const stockType = e.target.value;
-                setFormData({ ...formData, stockType, category: stockType === "sheet" ? sheetCats[0] : hardwareCats[0] });
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="hardware">Hardware</option>
-              <option value="sheet">Sheet</option>
-            </select>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              {(formData.stockType === "sheet" ? sheetCats : hardwareCats).map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Material name</label>
             <input
               type="text"
-              placeholder="Brand"
-              value={formData.brand}
-              onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+              placeholder="e.g. Oak 18mm HMR"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="text"
-              placeholder="Product code"
-              value={formData.productCode}
-              onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-          <input
-            type="text"
-            placeholder="Colour"
-            value={formData.colour}
-            onChange={(e) => setFormData({ ...formData, colour: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              type="number"
-              placeholder="Opening qty"
-              value={formData.on_hand_qty}
-              onChange={(e) => setFormData({ ...formData, on_hand_qty: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-            <select
-              value={formData.unit}
-              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              {units.map((u) => (
-                <option key={u} value={u}>{u}</option>
-              ))}
-            </select>
-            <input
-              type="number"
-              placeholder="Reorder pt"
-              value={formData.reorder_point}
-              onChange={(e) => setFormData({ ...formData, reorder_point: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              autoFocus
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              placeholder="Unit cost (ex GST)"
-              value={formData.unit_cost}
-              onChange={(e) => setFormData({ ...formData, unit_cost: parseFloat(e.target.value) || 0 })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="text"
-              placeholder="Supplier"
-              value={formData.supplier}
-              onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Unit</label>
+              <select
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                {units.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Reorder at</label>
+              <input
+                type="number"
+                min={0}
+                value={formData.reorder_point}
+                onChange={(e) => setFormData({ ...formData, reorder_point: parseFloat(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
           </div>
-          <input
-            type="text"
-            placeholder="Storage location (optional)"
-            value={formData.storageLocation}
-            onChange={(e) => setFormData({ ...formData, storageLocation: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
           {addError && (
             <div className="alert-danger">{addError}</div>
           )}
@@ -495,6 +430,9 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
           >
             {adding ? "Saving..." : "Save Material"}
           </button>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            Stock quantity only changes via <b>Receive stock</b> (up) or production counters (down) — not this form. Supplier, cost, thickness and storage location can be added later on the item&apos;s page.
+          </p>
         </div>
       )}
 
