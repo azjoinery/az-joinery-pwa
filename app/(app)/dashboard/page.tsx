@@ -532,7 +532,23 @@ function QuickAction({
    ========================================================================== */
 
 // Minimal shape for the material picker (the stock list returns much more).
-interface StockPick { id: string; name: string; unit?: string; on_hand_qty?: number }
+interface StockPick { id: string; name: string; unit?: string; on_hand_qty?: number; stockType?: string; category?: string }
+
+/**
+ * Slice 6 — classify a stock item as "cnc" (boards/sheets/edging) or
+ * "hardware" (hinges, runners, handles, screws, fasteners), based on
+ * whatever the backend tagged it with. Anything unmatched defaults to
+ * "cnc" so nothing goes missing from the dashboard.
+ */
+function pickDept(stk?: StockPick): "cnc" | "hardware" {
+  const t = ((stk?.stockType || "") + " " + (stk?.category || "")).toLowerCase();
+  if (
+    t.includes("hardware") || t.includes("hinge") || t.includes("runner") ||
+    t.includes("handle") || t.includes("screw") || t.includes("fastener") ||
+    t.includes("drawer runner") || t.includes("knob") || t.includes("pull")
+  ) return "hardware";
+  return "cnc";
+}
 
 function FloorLogDashboard() {
   const { user } = useAuth();
@@ -550,9 +566,8 @@ function FloorLogDashboard() {
   // Counter-based materials UI (Slice 1) — Assigned / Record tabs.
   // Each + / − tap updates local materials state and schedules a debounced save.
   const [matsTab, setMatsTab] = useState<"assigned" | "record">("record");
-  const [recordDept, setRecordDept] = useState<"CNC" | "Assembly" | "Hardware">("CNC");
   const [recordJobId, setRecordJobId] = useState<string>("");
-  const [pickerOpen, setPickerOpen] = useState<null | { target: "assigned" | "record"; jobId?: string }>(null);
+  const [pickerOpen, setPickerOpen] = useState<null | { target: "assigned" | "record"; jobId?: string; dept?: "cnc" | "hardware" }>(null);
   const [pickerQ, setPickerQ] = useState("");
   const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -564,12 +579,6 @@ function FloorLogDashboard() {
     { key: "cab_tall", label: "Tall cabinet" },
     { key: "cab_drawer", label: "Drawer / corner" },
     { key: "cab_special", label: "Special cabinet" },
-  ];
-
-  const cncItems = [
-    { key: "cnc_colour", label: "Colour board" },
-    { key: "cnc_mdf", label: "MDF" },
-    { key: "cnc_carcass", label: "Carcass" },
   ];
 
   useEffect(() => {
@@ -717,8 +726,193 @@ function FloorLogDashboard() {
         </div>
       </WorkshopHero>
 
+      {/* ============================================================
+          Slice 6 — three sections. CNC + Hardware are live (deduct
+          stock on tap). Assembly is a draft tally (saves on Submit).
+          Materials are classified per stock item's stockType/category
+          via pickDept(). Assigned rows already have a jobId (allocated
+          by the supervisor); Record rows are freely added on the day.
+          ============================================================ */}
+
+      {/* Shared save-status header for the two live sections */}
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Materials — live</span>
+        <span className="text-xs font-medium" style={{ color: saveStatus === "error" ? "#b91c1c" : "#059669" }}>
+          {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved ✓" : saveStatus === "error" ? "Save failed — try again" : ""}
+        </span>
+      </div>
+
+      {/* Assigned / Record tab switch — shared by both material sections */}
+      <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1">
+        <button
+          type="button"
+          onClick={() => setMatsTab("assigned")}
+          className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "assigned" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+        >
+          Assigned
+        </button>
+        <button
+          type="button"
+          onClick={() => setMatsTab("record")}
+          className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "record" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
+        >
+          Record
+        </button>
+      </div>
+
+      {matsTab === "record" && (
+        <div className="mb-3">
+          <label className="mb-1 block text-xs font-semibold text-gray-500">Job (optional)</label>
+          <select
+            value={recordJobId}
+            onChange={(e) => setRecordJobId(e.target.value)}
+            className="input w-full"
+          >
+            <option value="">— no job (general workshop use) —</option>
+            {jobList.map((j) => (
+              <option key={j.id} value={j.id}>{[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* ================ CNC boards ================ */}
+      {(() => {
+        const jobKey = recordJobId || "";
+        const rows = materials
+          .map((m, i) => ({ m, i }))
+          .filter(({ m }) => {
+            const stk = stockList.find((s) => s.id === m.stockItemId);
+            if (pickDept(stk) !== "cnc") return false;
+            if (matsTab === "assigned") return !!m.jobId;
+            return (m.jobId || "") === jobKey;
+          });
+        return (
+          <section className="mb-6">
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <h2 className="section-title">CNC boards</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Each tap = 1 sheet off the shelf.</p>
+              </div>
+            </div>
+            {rows.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-400">
+                {matsTab === "assigned"
+                  ? "No boards assigned to you today."
+                  : <>No boards yet. Tap <b>+ Add board from stock</b> below.</>}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rows.map(({ m, i }) => {
+                  const stk = stockList.find((s) => s.id === m.stockItemId);
+                  const job = jobList.find((j) => j.id === m.jobId);
+                  const low = stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3;
+                  return (
+                    <div key={`cnc${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
+                        <div className="truncate text-xs text-gray-500">
+                          {matsTab === "assigned" && job
+                            ? [job.jobNum, job.client || job.projectName].filter(Boolean).join(" · ")
+                            : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                        <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
+                        <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                        <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {matsTab === "record" && (
+              <button
+                type="button"
+                onClick={() => { setPickerOpen({ target: "record", dept: "cnc" }); setPickerQ(""); }}
+                className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                + Add board from stock
+              </button>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* ================ Hardware fitted ================ */}
+      {(() => {
+        const jobKey = recordJobId || "";
+        const rows = materials
+          .map((m, i) => ({ m, i }))
+          .filter(({ m }) => {
+            const stk = stockList.find((s) => s.id === m.stockItemId);
+            if (pickDept(stk) !== "hardware") return false;
+            if (matsTab === "assigned") return !!m.jobId;
+            return (m.jobId || "") === jobKey;
+          });
+        return (
+          <section className="mb-6">
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <h2 className="section-title">Hardware fitted</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Hinges, runners, handles — each tap deducts stock.</p>
+              </div>
+            </div>
+            {rows.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-400">
+                {matsTab === "assigned"
+                  ? "No hardware assigned to you today."
+                  : <>No hardware yet. Tap <b>+ Add hardware from stock</b> below.</>}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {rows.map(({ m, i }) => {
+                  const stk = stockList.find((s) => s.id === m.stockItemId);
+                  const job = jobList.find((j) => j.id === m.jobId);
+                  const low = stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3;
+                  return (
+                    <div key={`hw${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
+                        <div className="truncate text-xs text-gray-500">
+                          {matsTab === "assigned" && job
+                            ? [job.jobNum, job.client || job.projectName].filter(Boolean).join(" · ")
+                            : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+                        <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
+                        <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                        <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {matsTab === "record" && (
+              <button
+                type="button"
+                onClick={() => { setPickerOpen({ target: "record", dept: "hardware" }); setPickerQ(""); }}
+                className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                + Add hardware from stock
+              </button>
+            )}
+          </section>
+        );
+      })()}
+
+      {/* ================ Assembly (tally, not stock) ================ */}
       <section className="mb-6">
-        <SectionHeading>Cabinets</SectionHeading>
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <h2 className="section-title">Assembly</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Cabinets assembled — for the daily report. No stock impact.</p>
+          </div>
+          <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Draft</span>
+        </div>
         <div className="space-y-2.5">
           {cabinetTypes.map((type) => (
             <Counter
@@ -732,203 +926,58 @@ function FloorLogDashboard() {
         </div>
       </section>
 
-      <section className="mb-6">
-        <SectionHeading>CNC</SectionHeading>
-        <div className="space-y-2.5">
-          {cncItems.map((item) => (
-            <Counter
-              key={item.key}
-              label={item.label}
-              value={counts[item.key] || 0}
-              onIncrement={() => increment(item.key)}
-              onDecrement={() => decrement(item.key)}
+      {/* Material picker modal (dropdown from stock catalogue) —
+          filtered by pickerOpen.dept so "+ Add board" only shows CNC
+          items and "+ Add hardware" only shows hardware items. */}
+      {pickerOpen && (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setPickerOpen(null)}>
+          <div className="w-full max-w-md rounded-t-2xl bg-white p-4 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-200 sm:hidden" />
+            <div className="mb-2 text-base font-semibold text-gray-900">
+              {pickerOpen.dept === "hardware" ? "Pick hardware" : pickerOpen.dept === "cnc" ? "Pick a board" : "Pick a material"}
+            </div>
+            <input
+              type="search"
+              value={pickerQ}
+              onChange={(e) => setPickerQ(e.target.value)}
+              placeholder="Search…"
+              className="input mb-3 w-full"
+              autoFocus
             />
-          ))}
-        </div>
-      </section>
-
-      <section className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <SectionHeading>Materials used</SectionHeading>
-          <span className="text-xs font-medium" style={{ color: saveStatus === "error" ? "#b91c1c" : "#6b7280" }}>
-            {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved ✓" : saveStatus === "error" ? "Save failed — try again" : ""}
-          </span>
-        </div>
-
-        {/* Assigned / Record tab switch */}
-        <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMatsTab("assigned")}
-            className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "assigned" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
-          >
-            Assigned
-          </button>
-          <button
-            type="button"
-            onClick={() => setMatsTab("record")}
-            className={`flex-1 rounded-md px-3 py-2 text-sm font-semibold ${matsTab === "record" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
-          >
-            Record
-          </button>
-        </div>
-
-        {matsTab === "assigned" && (
-          materials.filter((m) => m.jobId).length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400">
-              Nothing assigned to you yet today.
-              <div className="mt-1 text-xs">Switch to <b>Record</b> to log ad-hoc work.</div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {materials.map((m, i) => {
-                if (!m.jobId) return null;
-                const stk = stockList.find((s) => s.id === m.stockItemId);
-                const job = jobList.find((j) => j.id === m.jobId);
-                return (
-                  <div key={`a${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="max-h-72 overflow-y-auto">
+              {(() => {
+                const filtered = stockList
+                  .filter((s) => !pickerOpen.dept || pickDept(s) === pickerOpen.dept)
+                  .filter((s) => !pickerQ || s.name.toLowerCase().includes(pickerQ.toLowerCase()));
+                if (filtered.length === 0) {
+                  return <div className="p-6 text-center text-sm text-gray-400">No {pickerOpen.dept === "hardware" ? "hardware" : pickerOpen.dept === "cnc" ? "boards" : "materials"} match.</div>;
+                }
+                return filtered.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => addMaterialFromCatalogue(s.id)}
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left hover:border-gray-300 mb-2"
+                  >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
-                      <div className="truncate text-xs text-gray-500">{[job?.jobNum, job?.client || job?.projectName].filter(Boolean).join(" · ") || "No job"}</div>
+                      <div className="truncate text-sm font-semibold text-gray-900">{s.name}</div>
+                      <div className="truncate text-xs text-gray-500">{s.unit || ""}{typeof s.on_hand_qty === "number" ? ` · ${s.on_hand_qty} on hand` : ""}</div>
                     </div>
-                    <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
-                      <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
-                      <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
-                      <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
-                    </div>
-                  </div>
-                );
-              })}
+                    <span className="text-lg font-bold text-gray-400">+</span>
+                  </button>
+                ));
+              })()}
             </div>
-          )
-        )}
-
-        {matsTab === "record" && (
-          <div>
-            {/* Department chips */}
-            <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1">
-              {(["CNC", "Assembly", "Hardware"] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setRecordDept(d)}
-                  className={`flex-1 rounded-md px-3 py-2 text-xs font-semibold ${recordDept === d ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-
-            {/* Optional job */}
-            <div className="mb-3">
-              <label className="mb-1 block text-xs font-semibold text-gray-500">Job (optional)</label>
-              <select
-                value={recordJobId}
-                onChange={(e) => setRecordJobId(e.target.value)}
-                className="input w-full"
-              >
-                <option value="">— no job (general workshop use) —</option>
-                {jobList.map((j) => (
-                  <option key={j.id} value={j.id}>{[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Material counter rows for THIS job (or "no job") */}
-            {(() => {
-              const jobKey = recordJobId || "";
-              const rows = materials
-                .map((m, i) => ({ m, i }))
-                .filter(({ m }) => (m.jobId || "") === jobKey);
-              if (rows.length === 0) {
-                return (
-                  <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-400">
-                    No materials yet. Tap <b>+ Add material</b> below.
-                  </div>
-                );
-              }
-              return (
-                <div className="space-y-2">
-                  {rows.map(({ m, i }) => {
-                    const stk = stockList.find((s) => s.id === m.stockItemId);
-                    const low = stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3;
-                    return (
-                      <div key={`r${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-gray-900">{stk?.name || "Material"}</div>
-                          <div className="truncate text-xs text-gray-500">
-                            {stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}
-                            {low ? " · low" : ""}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
-                          <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
-                          <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
-                          <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
             <button
               type="button"
-              onClick={() => { setPickerOpen({ target: "record" }); setPickerQ(""); }}
-              className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              onClick={() => setPickerOpen(null)}
+              className="mt-2 w-full rounded-lg py-3 text-sm font-semibold text-gray-500"
             >
-              + Add material
+              Cancel
             </button>
           </div>
-        )}
-
-        {/* Material picker modal (dropdown from stock catalogue) */}
-        {pickerOpen && (
-          <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setPickerOpen(null)}>
-            <div className="w-full max-w-md rounded-t-2xl bg-white p-4 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-200 sm:hidden" />
-              <div className="mb-2 text-base font-semibold text-gray-900">Pick a material</div>
-              <input
-                type="search"
-                value={pickerQ}
-                onChange={(e) => setPickerQ(e.target.value)}
-                placeholder="Search materials…"
-                className="input mb-3 w-full"
-                autoFocus
-              />
-              <div className="max-h-72 overflow-y-auto">
-                {stockList
-                  .filter((s) => !pickerQ || s.name.toLowerCase().includes(pickerQ.toLowerCase()))
-                  .map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => addMaterialFromCatalogue(s.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 text-left hover:border-gray-300 mb-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-gray-900">{s.name}</div>
-                        <div className="truncate text-xs text-gray-500">{s.unit || ""}{typeof s.on_hand_qty === "number" ? ` · ${s.on_hand_qty} on hand` : ""}</div>
-                      </div>
-                      <span className="text-lg font-bold text-gray-400">+</span>
-                    </button>
-                  ))}
-                {stockList.filter((s) => !pickerQ || s.name.toLowerCase().includes(pickerQ.toLowerCase())).length === 0 && (
-                  <div className="p-6 text-center text-sm text-gray-400">No materials match.</div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(null)}
-                className="mt-2 w-full rounded-lg py-3 text-sm font-semibold text-gray-500"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+        </div>
+      )}
 
       <section className="mb-6">
         <div className="field">
@@ -960,8 +1009,11 @@ function FloorLogDashboard() {
         style={{ minHeight: "3.25rem" }}
       >
         <Icon name="uploads" size={19} />
-        {saving ? "Saving…" : "Submit daily log"}
+        {saving ? "Saving…" : "Submit today's tally + notes"}
       </button>
+      <p className="mt-2 text-center text-[11px] text-gray-500">
+        Sends the assembly tally + notes. CNC and Hardware above are already saved.
+      </p>
     </div>
   );
 }
