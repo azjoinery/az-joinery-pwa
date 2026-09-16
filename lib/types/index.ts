@@ -41,6 +41,9 @@ export interface Job {
   designStage: string;
   designProgress: number;
   productionStage: string;
+  productionProgress: number;
+  installStage: string;
+  installProgress: number;
   completionPct: number;
   assignedStaff?: string;
   assignedDesignerId?: string;
