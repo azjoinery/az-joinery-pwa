@@ -261,6 +261,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rebuildResult, setRebuildResult] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
+  const [search, setSearch] = useState("");
 
   const sheetCats = catalogs?.sheetCategories || ["HMR", "MDF", "Plywood", "Particleboard", "Melamine", "Veneer", "Other Sheet"];
   const hardwareCats = catalogs?.hardwareCategories || ["Hinges", "Hinge Plates", "Drawer Systems", "Push Catches", "Drawer Runners", "Screws", "Brackets", "Shelf Supports", "Handles", "Other Hardware"];
@@ -333,6 +334,18 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
 
   const lowStockItems = stocks.filter((s) => s.on_hand_qty <= s.reorder_point);
   const selected = stocks.find((s) => s.id === selectedId) || null;
+
+  // Slice 5b: search across the meaningful stock fields. Substring match,
+  // case-insensitive. Empty query keeps everything.
+  const visibleStocks = stocks.filter((s) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [
+      s.name, s.category, s.stockType, s.brand, s.productCode,
+      s.colour, s.finish, s.thickness, s.size, s.storageLocation, s.supplier,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
 
   if (selected) {
     return (
@@ -447,13 +460,40 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
         </div>
       )}
 
+      {/* Slice 5b: search the stock list */}
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-4-4" />
+        </svg>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search material, code, category, colour, thickness…"
+          className="flex-1 border-0 bg-transparent px-1 py-1 text-[15px] outline-none placeholder:text-gray-400"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100"
+            aria-label="Clear search"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       <div className="space-y-2">
         {loading ? (
           <div className="text-center py-8 text-gray-600">Loading stocks...</div>
         ) : stocks.length === 0 ? (
           <div className="text-center py-8 text-gray-600">No materials yet</div>
+        ) : visibleStocks.length === 0 ? (
+          <div className="text-center py-8 text-gray-600">No materials match this search.</div>
         ) : (
-          stocks.map((stock) => (
+          visibleStocks.map((stock) => (
             <button
               key={stock.id}
               onClick={() => setSelectedId(stock.id)}
