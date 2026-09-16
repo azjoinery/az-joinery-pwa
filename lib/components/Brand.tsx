@@ -20,8 +20,8 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-const MARK_RATIO = 788 / 768; // height / width of logo-mark.png
-const FULL_RATIO = 1338 / 1024; // height / width of logo.png
+const MARK_RATIO = 1; // height / width of logo-mark — now square
+const FULL_RATIO = 910 / 709; // height / width of logo.png (with JOINERY text)
 
 export function LogoMark({
   size = 32,
