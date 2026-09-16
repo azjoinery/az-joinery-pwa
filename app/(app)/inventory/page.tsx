@@ -138,6 +138,34 @@ const OFFCUT_STATUSES = ["Available", "Reserved", "Partially Used", "Used", "Dam
 const PO_STATUSES = ["draft", "sent", "confirmed", "partial", "received", "closed", "cancelled"];
 const TOP_ROLES = ["managing_director", "manager", "admin"];
 
+/**
+ * Slice 7c — which KPI cards a role sees on Inventory, and which tabs.
+ *
+ *   executive (MD, manager, DM, admin) → money-first view; every tab.
+ *   office → purchasing view; every tab.
+ *   workshop (supervisor) → floor view; no money; Workshop tabs only.
+ *
+ * Anything not listed falls through to workshop, so a new role never sees
+ * a financial number by accident.
+ */
+type KpiVariant = "executive" | "office" | "workshop";
+function kpiVariantForRole(role: string | undefined): KpiVariant {
+  if (!role) return "workshop";
+  if (["managing_director", "manager", "department_manager", "admin"].includes(role)) return "executive";
+  if (role === "office") return "office";
+  return "workshop";
+}
+function showOfficeTabs(role: string | undefined): boolean {
+  if (!role) return false;
+  return kpiVariantForRole(role) !== "workshop";
+}
+// Currency formatter for the money-visible KPI cards. Falls back to "—"
+// when the backend hasn't computed the number yet.
+const aud = (n?: number) =>
+  typeof n === "number"
+    ? new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(n)
+    : "—";
+
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-gray-100 text-gray-700",
   sent: "bg-blue-100 text-blue-700",
@@ -178,12 +206,46 @@ export default function InventoryPage() {
   };
 
   const canRebuild = !!user && TOP_ROLES.includes(user.role);
+  const variant = kpiVariantForRole(user?.role);
+  const withOfficeTabs = showOfficeTabs(user?.role);
+
+  // Slice 7c — a floor role that lands on a hidden tab (e.g. an old link
+  // to "orders") gets bounced to the first Workshop tab so they don't stare
+  // at an empty page.
+  useEffect(() => {
+    if (!withOfficeTabs && (tab === "transactions" || tab === "orders" || tab === "suppliers")) {
+      setTab("stock");
+    }
+  }, [withOfficeTabs, tab]);
 
   return (
     <div className="page space-y-4">
       <h1 className="page-title">Inventory</h1>
 
-      {kpis && (
+      {/* Slice 7c — role-based KPI cards. Executive tier sees money-first;
+          office sees purchasing counters + total value; supervisor gets
+          the floor view with no financial figures. */}
+      {kpis && variant === "executive" && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+            <div className="text-sm text-orange-700">Stock Value</div>
+            <div className="text-2xl font-bold text-orange-900">{aud(kpis.primary.total_value)}</div>
+          </div>
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="text-sm text-blue-600">Below Reorder</div>
+            <div className="text-2xl font-bold text-blue-900">{kpis.primary.below_reorder}</div>
+          </div>
+          <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
+            <div className="text-sm text-emerald-700">Material $ / Project</div>
+            <div className="text-2xl font-bold text-emerald-900">{aud(kpis.efficiency.material_cost_per_project)}</div>
+          </div>
+          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+            <div className="text-sm text-amber-600">Pending POs</div>
+            <div className="text-2xl font-bold text-amber-900">{kpis.efficiency.pending_pos}</div>
+          </div>
+        </div>
+      )}
+      {kpis && variant === "office" && (
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <div className="text-sm text-blue-600">Below Reorder</div>
@@ -193,19 +255,35 @@ export default function InventoryPage() {
             <div className="text-sm text-purple-600">On Order</div>
             <div className="text-2xl font-bold text-purple-900">{kpis.primary.on_order_items}</div>
           </div>
-          <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
-            <div className="text-sm text-teal-600">Offcuts Available</div>
-            <div className="text-2xl font-bold text-teal-900">{kpis.primary.offcuts_available}</div>
-          </div>
           <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
             <div className="text-sm text-amber-600">Pending POs</div>
             <div className="text-2xl font-bold text-amber-900">{kpis.efficiency.pending_pos}</div>
           </div>
+          <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+            <div className="text-sm text-orange-700">Stock Value</div>
+            <div className="text-2xl font-bold text-orange-900">{aud(kpis.primary.total_value)}</div>
+          </div>
+        </div>
+      )}
+      {kpis && variant === "workshop" && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="text-sm text-blue-600">Below Reorder</div>
+            <div className="text-2xl font-bold text-blue-900">{kpis.primary.below_reorder}</div>
+          </div>
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+            <div className="text-sm text-purple-600">On Order</div>
+            <div className="text-2xl font-bold text-purple-900">{kpis.primary.on_order_items}</div>
+          </div>
+          <div className="bg-teal-50 p-4 rounded-lg border border-teal-200">
+            <div className="text-sm text-teal-600">Offcuts</div>
+            <div className="text-2xl font-bold text-teal-900">{kpis.primary.offcuts_available}</div>
+          </div>
         </div>
       )}
 
-      {/* The floor only needs Stock + Offcuts. Transactions, purchase orders and
-          suppliers are office work, so they are grouped separately below. */}
+      {/* Tabs. Office row is hidden from floor roles (supervisor); Workshop
+          tabs stay for everyone who can reach this page at all. */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Workshop</span>
@@ -223,29 +301,31 @@ export default function InventoryPage() {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Office</span>
-          <div className="flex gap-2 overflow-x-auto">
-            {(["transactions", "orders", "suppliers"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap capitalize ${
-                  tab === t ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500"
-                }`}
-              >
-                {t === "orders" ? "Purchase Orders" : t}
-              </button>
-            ))}
+        {withOfficeTabs && (
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Office</span>
+            <div className="flex gap-2 overflow-x-auto">
+              {(["transactions", "orders", "suppliers"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap capitalize ${
+                    tab === t ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {t === "orders" ? "Purchase Orders" : t}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} />}
       {tab === "offcuts" && <OffcutsTab catalogs={catalogs} />}
-      {tab === "transactions" && <TransactionsTab catalogs={catalogs} />}
-      {tab === "orders" && <OrdersTab />}
-      {tab === "suppliers" && <SuppliersTab />}
+      {tab === "transactions" && withOfficeTabs && <TransactionsTab catalogs={catalogs} />}
+      {tab === "orders" && withOfficeTabs && <OrdersTab />}
+      {tab === "suppliers" && withOfficeTabs && <SuppliersTab />}
     </div>
   );
 }
