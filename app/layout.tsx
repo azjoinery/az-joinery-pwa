@@ -75,6 +75,12 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
+        {/* Register the service worker — required for iOS PWA + offline support */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}`,
+          }}
+        />
       </head>
       <body className="bg-ink-50 text-ink-900 antialiased">{children}</body>
     </html>
