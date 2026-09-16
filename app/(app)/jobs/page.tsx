@@ -30,6 +30,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -57,7 +58,18 @@ export default function JobsPage() {
     }
   };
 
-  const visibleJobs = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
+  const visibleJobs = jobs.filter((j) => {
+    if (filter !== "all" && j.status !== filter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    // Search across the fields makers/office actually use to find a job.
+    // Job number, client, project name, site address, phone, notes.
+    const hay = [
+      (j as any).jobNum, j.client, j.projectName, (j as any).siteAddress,
+      (j as any).phone, (j as any).notes,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  });
 
   const createJob = async () => {
     if (!createForm.client.trim()) return;
@@ -170,6 +182,31 @@ export default function JobsPage() {
         <div className="alert-danger">{loadError}</div>
       )}
 
+      {/* Search */}
+      <div className="mb-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-4-4" />
+        </svg>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search job number, client, project, address…"
+          className="flex-1 border-0 bg-transparent px-1 py-1 text-[15px] outline-none placeholder:text-gray-400"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100"
+            aria-label="Clear search"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {/* Filter */}
       <div className="flex gap-2 overflow-x-auto pb-2">
         {["all", ...STATUSES].map((status) => (
@@ -191,7 +228,7 @@ export default function JobsPage() {
       {loading ? (
         <div className="text-center py-8 text-gray-600">Loading jobs...</div>
       ) : visibleJobs.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">No jobs found</div>
+        <div className="text-center py-8 text-gray-600">{search || filter !== "all" ? "No jobs match this search / filter." : "No jobs yet."}</div>
       ) : (
         <div className="space-y-3">
           {visibleJobs.map((job) => (
