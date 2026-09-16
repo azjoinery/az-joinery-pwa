@@ -96,6 +96,10 @@ export default function JobsPage() {
           setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
           setSelectedJob(updated);
         }}
+        onDeleted={(id) => {
+          setJobs((prev) => prev.filter((j) => j.id !== id));
+          setSelectedJob(null);
+        }}
       />
     );
   }
@@ -269,12 +273,31 @@ function JobDetail({
   job,
   onBack,
   onUpdated,
+  onDeleted,
 }: {
   job: Job;
   onBack: () => void;
   onUpdated: (job: Job) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // Slice 7b — two-tap delete (Delete → Yes, delete) so a stray tap never
+  // wipes a job. Real removal happens on the second confirmation.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const remove = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/jobs/${job.id}`);
+      onDeleted(job.id);
+    } catch (err) {
+      setDeleteError("Couldn't delete this job — it was not removed. Check your connection and try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
   const [form, setForm] = useState({
     client: job.client,
     projectName: job.projectName,
@@ -309,11 +332,40 @@ function JobDetail({
           ← Back to Jobs
         </button>
         {!editing && (
-          <button onClick={() => setEditing(true)} className="text-sm px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
-            Edit
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setEditing(true)} className="text-sm px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
+              Edit
+            </button>
+            {!confirmDelete ? (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="text-sm px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium hover:bg-red-100"
+              >
+                Delete
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={remove}
+                  disabled={deleting}
+                  className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:bg-gray-400"
+                >
+                  {deleting ? "Deleting…" : "Yes, delete"}
+                </button>
+                <button
+                  onClick={() => { setConfirmDelete(false); setDeleteError(null); }}
+                  className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
+      {deleteError && (
+        <div className="alert-danger mb-3">{deleteError}</div>
+      )}
 
       <div className="bg-white rounded-lg p-6 border border-gray-200">
         {editing ? (
