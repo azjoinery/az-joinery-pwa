@@ -267,20 +267,58 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
   const hardwareCats = catalogs?.hardwareCategories || ["Hinges", "Hinge Plates", "Drawer Systems", "Push Catches", "Drawer Runners", "Screws", "Brackets", "Shelf Supports", "Handles", "Other Hardware"];
   const units = catalogs?.units || ["Piece", "Sheet", "Metre", "Box", "Pack"];
 
+  // Slice 7a — Type drives Category and the unit default. Sheet defaults to
+  // "Sheet"; Hardware defaults to "Piece". Category options swap when Type
+  // changes so nothing gets stuck on "Hinges" like it used to.
   const [formData, setFormData] = useState({
     name: "",
-    stockType: "hardware",
-    category: hardwareCats[0] || "Other Hardware",
+    stockType: "sheet",
+    category: sheetCats[0] || "HMR",
     brand: "",
     productCode: "",
     colour: "",
+    size: "",
     on_hand_qty: 0,
-    unit: "Piece",
-    reorder_point: 10,
+    unit: "Sheet",
+    reorder_point: 5,
     unit_cost: 0,
     supplier: "",
     storageLocation: "",
   });
+
+  // Options for the Type dropdown. Sheet + Hardware cover 95% of joinery
+  // stock; the others are here so nothing has to be forced into the wrong
+  // bucket. Edging and Consumable classify as CNC in the dashboard's
+  // pickDept helper by default (they're board-adjacent supplies).
+  const typeOptions: { value: string; label: string }[] = [
+    { value: "sheet", label: "Sheet / Board" },
+    { value: "hardware", label: "Hardware" },
+    { value: "edging", label: "Edging / Edge tape" },
+    { value: "consumable", label: "Consumable (glue, screws, etc.)" },
+    { value: "other", label: "Other" },
+  ];
+  // Category options depend on Type so the dropdown never shows Hinges
+  // when the user picked Sheet.
+  const categoriesFor = (t: string): string[] => {
+    if (t === "sheet") return sheetCats;
+    if (t === "hardware") return hardwareCats;
+    if (t === "edging") return ["Edge tape", "Solid edging", "Other Edging"];
+    if (t === "consumable") return ["Screws", "Glue", "Fasteners", "Abrasives", "Other Consumable"];
+    return ["Other"];
+  };
+  // When Type changes, pick a valid Category for that type.
+  const onTypeChange = (nextType: string) => {
+    const cats = categoriesFor(nextType);
+    setFormData((prev) => ({
+      ...prev,
+      stockType: nextType,
+      category: cats[0] || "Other",
+      unit: nextType === "sheet" ? "Sheet"
+          : nextType === "edging" ? "Metre"
+          : nextType === "consumable" ? "Pack"
+          : "Piece",
+    }));
+  };
 
   useEffect(() => {
     loadStocks();
@@ -304,7 +342,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
     setAddError(null);
     try {
       await api.post("/stock/items", formData);
-      setFormData({ ...formData, name: "", on_hand_qty: 0, productCode: "", colour: "" });
+      setFormData({ ...formData, name: "", on_hand_qty: 0, productCode: "", colour: "", size: "" });
       setShowForm(false);
       loadStocks();
     } catch (err) {
@@ -402,13 +440,52 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
             <label className="block text-xs font-semibold text-gray-500 mb-1">Material name</label>
             <input
               type="text"
-              placeholder="e.g. Oak 18mm HMR"
+              placeholder={formData.stockType === "sheet" ? "e.g. Silver Frost HMR 18mm" : formData.stockType === "hardware" ? "e.g. Blum Clip-Top hinge 110°" : "e.g. Edge tape 22mm"}
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               autoFocus
             />
           </div>
+          {/* Slice 7a — Type + Category. Category adapts to Type. */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Type</label>
+              <select
+                value={formData.stockType}
+                onChange={(e) => onTypeChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                {typeOptions.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Category</label>
+              <select
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                {categoriesFor(formData.stockType).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {formData.stockType === "sheet" && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Size (optional)</label>
+              <input
+                type="text"
+                placeholder="e.g. 3600 × 1800 × 18mm"
+                value={formData.size}
+                onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1">Unit</label>
@@ -444,7 +521,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
             {adding ? "Saving..." : "Save Material"}
           </button>
           <p className="text-[11px] text-gray-500 leading-snug">
-            Stock quantity only changes via <b>Receive stock</b> (up) or production counters (down) — not this form. Supplier, cost, thickness and storage location can be added later on the item&apos;s page.
+            Type + Category decide where this shows up on the maker dashboard (CNC vs Hardware). Stock quantity only changes via <b>Receive stock</b> (up) or production counters (down) — not this form. Supplier, cost, thickness and storage location can be added later on the item&apos;s page.
           </p>
         </div>
       )}
@@ -552,6 +629,24 @@ function StockItemDetail({
   const [storageLocation, setStorageLocation] = useState(item.storageLocation || "");
   const [onHand, setOnHand] = useState<number>(item.on_hand_qty);
   const [saving, setSaving] = useState(false);
+  // Slice 7a — Type + Category editable so a wrongly-classified item can be fixed.
+  const [stockType, setStockType] = useState<string>(item.stockType || "sheet");
+  const [category, setCategory] = useState<string>(item.category || "");
+  const [size, setSize] = useState<string>(item.size || "");
+  const detailTypeOptions = [
+    { value: "sheet", label: "Sheet / Board" },
+    { value: "hardware", label: "Hardware" },
+    { value: "edging", label: "Edging / Edge tape" },
+    { value: "consumable", label: "Consumable (glue, screws, etc.)" },
+    { value: "other", label: "Other" },
+  ];
+  const detailCategoriesFor = (t: string): string[] => {
+    if (t === "sheet") return ["HMR", "MDF", "Plywood", "Particleboard", "Melamine", "Veneer", "Other Sheet"];
+    if (t === "hardware") return ["Hinges", "Hinge Plates", "Drawer Systems", "Drawer Runners", "Push Catches", "Screws", "Brackets", "Shelf Supports", "Handles", "Other Hardware"];
+    if (t === "edging") return ["Edge tape", "Solid edging", "Other Edging"];
+    if (t === "consumable") return ["Screws", "Glue", "Fasteners", "Abrasives", "Other Consumable"];
+    return ["Other"];
+  };
 
   // Allocate (reserve) stock to a job. Reserving does NOT consume stock — it
   // earmarks it, so On Hand stays put and Available drops.
@@ -634,6 +729,8 @@ function StockItemDetail({
       const updated = await api.patch<StockItem>(`/stock/items/${item.id}`, {
         name, reorder_point: reorderPoint, supplier, storageLocation,
         on_hand_qty: onHand,
+        // Slice 7a — send Type/Category/Size so a stuck item can be reclassified.
+        stockType, category, size,
       });
       onUpdated(updated);
     } catch (err) {
@@ -696,6 +793,51 @@ function StockItemDetail({
           <label className="text-xs text-gray-500">Name</label>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
         </div>
+        {/* Slice 7a — Type + Category editable. Changing Type resets Category
+            to a valid option for that Type so nothing stays as "Hinges" on a sheet. */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500">Type</label>
+            <select
+              value={stockType}
+              onChange={(e) => {
+                const t = e.target.value;
+                setStockType(t);
+                const cats = detailCategoriesFor(t);
+                if (!cats.includes(category)) setCategory(cats[0] || "Other");
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              {detailTypeOptions.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            >
+              {detailCategoriesFor(stockType).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {stockType === "sheet" && (
+          <div>
+            <label className="text-xs text-gray-500">Size</label>
+            <input
+              type="text"
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              placeholder="e.g. 3600 × 1800 × 18mm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-xs text-gray-500">Reorder point</label>
