@@ -59,10 +59,14 @@ export interface Task {
   jobId: string;
   title: string;
   description: string;
-  status: "Not Started" | "In Progress" | "Waiting for..." | "Completed";
+  status: "Not Started" | "In Progress" | "Waiting for..." | "Completed" | "Overdue";
+  priority: "Low" | "Medium" | "High";
   assigneeId: string;
   assigneeName: string;
   dueDate?: string;
+  drawing?: boolean;
+  createdById?: string;
+  createdByName?: string;
   createdAt: string;
 }
 
