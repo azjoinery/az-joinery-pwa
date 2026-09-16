@@ -282,6 +282,10 @@ export default function DesignPage() {
       job={selectedJob!}
       onBack={() => setSelectedJobId(null)}
       onJobUpdated={(updated) => setJobs((prev) => prev.map((j) => (j.id === updated.id ? { ...j, ...updated } : j)))}
+      onJobDeleted={(id) => {
+        setJobs((prev) => prev.filter((j) => j.id !== id));
+        setSelectedJobId(null);
+      }}
     />
   );
 }
@@ -290,12 +294,32 @@ function JobDesignDetail({
   job,
   onBack,
   onJobUpdated,
+  onJobDeleted,
 }: {
   job: DesignJob;
   onBack: () => void;
   onJobUpdated: (job: DesignJob) => void;
+  onJobDeleted: (id: string) => void;
 }) {
   const { user } = useAuth();
+  // Slice 7b — two-tap delete on a design job. Removes the whole underlying
+  // job record (design workflow is a view onto the job), so the same job also
+  // disappears from Jobs. Confirms once before firing.
+  const [confirmDeleteJob, setConfirmDeleteJob] = useState(false);
+  const [deletingJob, setDeletingJob] = useState(false);
+  const [deleteJobError, setDeleteJobError] = useState<string | null>(null);
+  const deleteJob = async () => {
+    setDeletingJob(true);
+    setDeleteJobError(null);
+    try {
+      await api.delete(`/jobs/${job.id}`);
+      onJobDeleted(job.id);
+    } catch (err) {
+      setDeleteJobError("Couldn't delete this job — it was not removed. Check your connection and try again.");
+    } finally {
+      setDeletingJob(false);
+    }
+  };
   const [tab, setTab] = useState<"stages" | "checklist" | "variations" | "materials" | "tasks" | "activity" | "release">("stages");
   const [currentJob, setCurrentJob] = useState(job);
   const [stageError, setStageError] = useState<string | null>(null);
@@ -646,7 +670,37 @@ function JobDesignDetail({
 
   return (
     <div className="page space-y-4">
-      <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to design jobs</button>
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to design jobs</button>
+        {/* Slice 7b — delete this job entirely (design workflow = the job itself). */}
+        {!confirmDeleteJob ? (
+          <button
+            onClick={() => setConfirmDeleteJob(true)}
+            className="text-sm px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium hover:bg-red-100"
+          >
+            Delete
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={deleteJob}
+              disabled={deletingJob}
+              className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:bg-gray-400"
+            >
+              {deletingJob ? "Deleting…" : "Yes, delete"}
+            </button>
+            <button
+              onClick={() => { setConfirmDeleteJob(false); setDeleteJobError(null); }}
+              className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+      {deleteJobError && (
+        <div className="alert-danger">{deleteJobError}</div>
+      )}
 
       <div>
         <div className="flex items-center gap-2">
