@@ -44,7 +44,8 @@ export type PageKey =
   | "invoices"
   | "design"
   | "team"
-  | "accounts";
+  | "accounts"
+  | "trash";
  
 // `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
 // emoji. Emojis render differently on every OS and read as unprofessional in
@@ -67,11 +68,17 @@ export const PAGES: Record<
   analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Commercial" },
  
   team:      { href: "/team",      label: "Team",      icon: "team",      group: "Business" },
+  trash:     { href: "/trash",     label: "Trash",     icon: "inventory", group: "Business" },
 };
  
 export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
  
 const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "log", "sales", "analytics", "invoices", "design", "accounts"];
+ 
+// Slice 8b — Trash lives in the Business group. It's added below to admin /
+// MD / manager (who can also permanent-delete) and supervisor (who can
+// restore, but the Trash page itself hides the Delete-forever button for
+// them — backend enforces the same rule).
  
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
@@ -84,14 +91,14 @@ const ALL_PAGES_PLUS_TEAM: PageKey[] = [...ALL_PAGES, "team"];
 // page after login. Roles not listed here fall back to a minimal safe
 // default (dashboard + tasks) rather than accidentally granting broad access.
 const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
-  managing_director: ALL_PAGES_PLUS_TEAM,
-  manager: ALL_PAGES_PLUS_TEAM,
+  managing_director: [...ALL_PAGES_PLUS_TEAM, "trash"],
+  manager: [...ALL_PAGES_PLUS_TEAM, "trash"],
   department_manager: ALL_PAGES,
-  admin: ALL_PAGES_PLUS_TEAM,
+  admin: [...ALL_PAGES_PLUS_TEAM, "trash"],
  
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
   // Log added so supervisor can review workshop activity history.
-  supervisor: ["dashboard", "jobs", "tasks", "inventory", "log"],
+  supervisor: ["dashboard", "jobs", "tasks", "inventory", "log", "trash"],
  
   // Materials/purchasing-facing role. Log added so office can review
   // stock movements (receipts, consumption) as history.
