@@ -1,17 +1,39 @@
 "use client";
 
+/**
+ * Jobs page — includes Slice 7b (edit/delete) and Slice 9b (multi-track progress).
+ *
+ * Job detail now shows three progress tracks (Design / Production / Install)
+ * with stage pills, progress bars, weighted overall %, and role-conditional
+ * "update stage" controls.
+ *
+ * Backend contract (Slice 9a):
+ *   GET    /jobs/track-stages               → { design, production, install, weights }
+ *   PATCH  /jobs/{id}/production-stage       → Job  (body: { stage })
+ *   PATCH  /jobs/{id}/install-stage          → Job  (body: { stage })
+ */
+
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api/client";
 import { Job } from "@/lib/types";
+import { useAuth } from "@/lib/store/auth";
 
 const STATUSES = ["Received", "In Progress", "Ready", "Delivered"];
 const PRIORITIES = ["Low", "Medium", "High"];
 const statusColors: Record<string, string> = {
-  "Received": "bg-gray-100 text-gray-800",
+  Received: "bg-gray-100 text-gray-800",
   "In Progress": "bg-yellow-100 text-yellow-800",
-  "Ready": "bg-green-100 text-green-800",
-  "Delivered": "bg-blue-100 text-blue-800",
+  Ready: "bg-green-100 text-green-800",
+  Delivered: "bg-blue-100 text-blue-800",
 };
+
+// Track stage definitions — match backend constants
+const PROD_STAGES = ["Not Started", "Materials In", "CNC Cut", "Assembling", "Hardware Fitted", "QA Passed"];
+const INSTALL_STAGES = ["Not Started", "Delivered", "Installed", "Signed Off"];
+
+// Roles that can advance each track
+const PROD_ROLES = new Set(["supervisor", "manager", "admin", "managing_director"]);
+const INSTALL_ROLES = new Set(["installer", "supervisor", "manager", "admin", "managing_director"]);
 
 const emptyForm = {
   client: "",
@@ -21,7 +43,6 @@ const emptyForm = {
   dueDate: "",
   priority: "Medium",
   status: "Received",
-  completionPct: 0,
   notes: "",
 };
 
@@ -30,7 +51,6 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState("all");
-  const [search, setSearch] = useState("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -38,9 +58,6 @@ export default function JobsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // Fetch once — filtering happens client-side against the same list, no
-  // need to refetch the unfiltered /jobs endpoint every time the filter
-  // chip changes.
   useEffect(() => {
     loadJobs();
   }, []);
@@ -58,18 +75,7 @@ export default function JobsPage() {
     }
   };
 
-  const visibleJobs = jobs.filter((j) => {
-    if (filter !== "all" && j.status !== filter) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    // Search across the fields makers/office actually use to find a job.
-    // Job number, client, project name, site address, phone, notes.
-    const hay = [
-      (j as any).jobNum, j.client, j.projectName, (j as any).siteAddress,
-      (j as any).phone, (j as any).notes,
-    ].filter(Boolean).join(" ").toLowerCase();
-    return hay.includes(q);
-  });
+  const visibleJobs = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
 
   const createJob = async () => {
     if (!createForm.client.trim()) return;
@@ -169,9 +175,7 @@ export default function JobsPage() {
               </select>
             </div>
           </div>
-          {createError && (
-            <div className="alert-danger">{createError}</div>
-          )}
+          {createError && <div className="alert-danger">{createError}</div>}
           <button
             onClick={createJob}
             disabled={creating}
@@ -182,34 +186,7 @@ export default function JobsPage() {
         </div>
       )}
 
-      {loadError && (
-        <div className="alert-danger">{loadError}</div>
-      )}
-
-      {/* Search */}
-      <div className="mb-3 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
-          <circle cx="11" cy="11" r="7" />
-          <path d="M20 20l-4-4" />
-        </svg>
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search job number, client, project, address…"
-          className="flex-1 border-0 bg-transparent px-1 py-1 text-[15px] outline-none placeholder:text-gray-400"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="rounded-md px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100"
-            aria-label="Clear search"
-          >
-            Clear
-          </button>
-        )}
-      </div>
+      {loadError && <div className="alert-danger">{loadError}</div>}
 
       {/* Filter */}
       <div className="flex gap-2 overflow-x-auto pb-2">
@@ -232,7 +209,7 @@ export default function JobsPage() {
       {loading ? (
         <div className="text-center py-8 text-gray-600">Loading jobs...</div>
       ) : visibleJobs.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">{search || filter !== "all" ? "No jobs match this search / filter." : "No jobs yet."}</div>
+        <div className="text-center py-8 text-gray-600">No jobs found</div>
       ) : (
         <div className="space-y-3">
           {visibleJobs.map((job) => (
@@ -269,6 +246,98 @@ export default function JobsPage() {
   );
 }
 
+
+/* ------------------------------------------------------------------ */
+/*  Track progress bar component                                       */
+/* ------------------------------------------------------------------ */
+function TrackBar({
+  label,
+  stage,
+  progress,
+  stages,
+  color,
+  canAdvance,
+  onAdvance,
+  advancing,
+}: {
+  label: string;
+  stage: string;
+  progress: number;
+  stages: string[];
+  color: string; // tailwind color prefix like "orange" or "green"
+  canAdvance: boolean;
+  onAdvance: (newStage: string) => void;
+  advancing: boolean;
+}) {
+  const currentIdx = stages.indexOf(stage);
+  const barColor = progress >= 100 ? "bg-green-500" : `bg-${color}-500`;
+  const dotColor = progress >= 100 ? "bg-green-500" : `bg-${color}-500`;
+
+  return (
+    <div className="py-3 border-t border-gray-100 first:border-t-0 first:pt-0">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+          <span className="text-sm font-semibold text-gray-900">{label}</span>
+          <span className="text-xs text-gray-500">{stage}</span>
+        </div>
+        <span className="text-sm font-bold tabular-nums text-gray-700">{progress}%</span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${progress >= 100 ? "bg-green-500" : "bg-orange-500"}`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      {/* Stage pills */}
+      <div className="flex gap-1 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {stages.map((s, i) => {
+          const done = i < currentIdx || (i === currentIdx && progress >= 100);
+          const current = i === currentIdx && progress < 100;
+          return (
+            <span
+              key={s}
+              className={`whitespace-nowrap px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                done
+                  ? "bg-green-50 border-green-200 text-green-700"
+                  : current
+                  ? "bg-orange-50 border-orange-200 text-orange-700"
+                  : "bg-gray-50 border-gray-200 text-gray-400"
+              }`}
+            >
+              {s}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Advance control */}
+      {canAdvance && currentIdx < stages.length - 1 && (
+        <div className="mt-2 flex items-center gap-2">
+          <select
+            defaultValue=""
+            onChange={(e) => { if (e.target.value) onAdvance(e.target.value); }}
+            disabled={advancing}
+            className="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-700"
+          >
+            <option value="" disabled>Advance stage...</option>
+            {stages.slice(currentIdx + 1).map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  Job detail view                                                     */
+/* ------------------------------------------------------------------ */
 function JobDetail({
   job,
   onBack,
@@ -280,24 +349,8 @@ function JobDetail({
   onUpdated: (job: Job) => void;
   onDeleted: (id: string) => void;
 }) {
+  const { user } = useAuth();
   const [editing, setEditing] = useState(false);
-  // Slice 7b — two-tap delete (Delete → Yes, delete) so a stray tap never
-  // wipes a job. Real removal happens on the second confirmation.
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const remove = async () => {
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await api.delete(`/jobs/${job.id}`);
-      onDeleted(job.id);
-    } catch (err) {
-      setDeleteError("Couldn't delete this job — it was not removed. Check your connection and try again.");
-    } finally {
-      setDeleting(false);
-    }
-  };
   const [form, setForm] = useState({
     client: job.client,
     projectName: job.projectName,
@@ -305,11 +358,18 @@ function JobDetail({
     dueDate: job.dueDate,
     priority: job.priority,
     status: job.status,
-    completionPct: job.completionPct,
     notes: job.notes,
   });
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Slice 7b — delete
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Slice 9b — stage advance
+  const [advancing, setAdvancing] = useState(false);
 
   const save = async () => {
     setSaving(true);
@@ -325,146 +385,171 @@ function JobDetail({
     }
   };
 
+  const remove = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/jobs/${job.id}`);
+      onDeleted(job.id);
+    } catch (err) {
+      setDeleteError("Couldn't delete — try again.");
+      setDeleting(false);
+    }
+  };
+
+  const advanceProduction = async (stage: string) => {
+    setAdvancing(true);
+    try {
+      const updated = await api.patch<Job>(`/jobs/${job.id}/production-stage`, { stage });
+      onUpdated(updated);
+    } catch (err) {
+      // silent — dropdown resets
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+  const advanceInstall = async (stage: string) => {
+    setAdvancing(true);
+    try {
+      const updated = await api.patch<Job>(`/jobs/${job.id}/install-stage`, { stage });
+      onUpdated(updated);
+    } catch (err) {
+      // silent
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+  const canAdvanceProd = !!user && PROD_ROLES.has(user.role);
+  const canAdvanceInstall = !!user && INSTALL_ROLES.has(user.role);
+
   return (
-    <div className="page">
-      <div className="flex justify-between items-center mb-4">
+    <div className="page space-y-4">
+      <div className="flex justify-between items-center">
         <button onClick={onBack} className="text-orange-600 font-medium hover:underline">
           ← Back to Jobs
         </button>
-        {!editing && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => setEditing(true)} className="text-sm px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
-              Edit
-            </button>
-            {!confirmDelete ? (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="text-sm px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg font-medium hover:bg-red-100"
-              >
+        <div className="flex items-center gap-2">
+          {!editing && !confirmDelete && (
+            <>
+              <button onClick={() => setEditing(true)} className="text-sm px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
+                Edit
+              </button>
+              <button onClick={() => setConfirmDelete(true)} className="text-sm px-3 py-1.5 border border-red-200 bg-red-50 text-red-700 rounded-lg font-medium">
                 Delete
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={remove}
-                  disabled={deleting}
-                  className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:bg-gray-400"
-                >
-                  {deleting ? "Deleting…" : "Yes, delete"}
-                </button>
-                <button
-                  onClick={() => { setConfirmDelete(false); setDeleteError(null); }}
-                  className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
-                >
-                  Cancel
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {deleteError && (
-        <div className="alert-danger mb-3">{deleteError}</div>
-      )}
-
-      <div className="bg-white rounded-lg p-6 border border-gray-200">
-        {editing ? (
-          <div className="space-y-3">
-            <input
-              type="text"
-              value={form.client}
-              onChange={(e) => setForm({ ...form, client: e.target.value })}
-              placeholder="Client"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold"
-            />
-            <input
-              type="text"
-              value={form.projectName}
-              onChange={(e) => setForm({ ...form, projectName: e.target.value })}
-              placeholder="Project name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-            <input
-              type="text"
-              value={form.siteAddress}
-              onChange={(e) => setForm({ ...form, siteAddress: e.target.value })}
-              placeholder="Site address"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-gray-500">Status</label>
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Priority</label>
-                <select
-                  value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value as Job["priority"] })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Due date</label>
-                <input
-                  type="date"
-                  value={form.dueDate || ""}
-                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Completion %</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.completionPct}
-                  onChange={(e) => setForm({ ...form, completionPct: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                />
-              </div>
-            </div>
-            <textarea
-              value={form.notes || ""}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              placeholder="Notes"
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
-            />
-            {saveError && (
-              <div className="alert-danger">{saveError}</div>
-            )}
-            <div className="flex gap-2">
+            </>
+          )}
+          {confirmDelete && (
+            <>
               <button
-                onClick={() => { setEditing(false); setSaveError(null); }}
-                className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium"
+                onClick={remove}
+                disabled={deleting}
+                className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium disabled:bg-gray-400"
+              >
+                {deleting ? "Deleting..." : "Yes, delete"}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
               >
                 Cancel
               </button>
-              <button
-                onClick={save}
-                disabled={saving}
-                className="flex-1 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400"
+            </>
+          )}
+        </div>
+      </div>
+
+      {deleteError && <div className="text-sm text-red-600 font-medium">{deleteError}</div>}
+
+      {/* Edit form */}
+      {editing ? (
+        <div className="bg-white rounded-lg p-6 border border-gray-200 space-y-3">
+          <input
+            type="text"
+            value={form.client}
+            onChange={(e) => setForm({ ...form, client: e.target.value })}
+            placeholder="Client"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold"
+          />
+          <input
+            type="text"
+            value={form.projectName}
+            onChange={(e) => setForm({ ...form, projectName: e.target.value })}
+            placeholder="Project name"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <input
+            type="text"
+            value={form.siteAddress}
+            onChange={(e) => setForm({ ...form, siteAddress: e.target.value })}
+            placeholder="Site address"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-gray-500">Status</label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Priority</label>
+              <select
+                value={form.priority}
+                onChange={(e) => setForm({ ...form, priority: e.target.value as Job["priority"] })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Due date</label>
+              <input
+                type="date"
+                value={form.dueDate || ""}
+                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
             </div>
           </div>
-        ) : (
-          <>
+          <textarea
+            value={form.notes || ""}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Notes"
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
+          />
+          {saveError && <div className="alert-danger">{saveError}</div>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setEditing(false); setSaveError(null); }}
+              className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex-1 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Read-only header */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">{job.projectName || job.client}</h1>
             <p className="text-gray-600 mb-4">{job.client}</p>
 
@@ -484,11 +569,11 @@ function JobDetail({
                 <div className="font-semibold text-gray-900 mt-1">{job.dueDate || "N/A"}</div>
               </div>
               <div>
-                <div className="page-subtitle">Progress</div>
+                <div className="page-subtitle">Overall</div>
                 <div className="mt-1">
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-orange-500 h-2 rounded-full"
+                      className={`h-2 rounded-full ${job.completionPct >= 100 ? "bg-green-500" : "bg-orange-500"}`}
                       style={{ width: `${job.completionPct}%` }}
                     ></div>
                   </div>
@@ -506,9 +591,56 @@ function JobDetail({
               <h3 className="font-semibold text-gray-900 mb-2">Notes</h3>
               <p className="text-gray-700">{job.notes || "No notes"}</p>
             </div>
-          </>
-        )}
-      </div>
+          </div>
+
+          {/* Slice 9b — Three progress tracks */}
+          <div className="bg-white rounded-lg p-4 border border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Progress tracks</h3>
+              <span className="text-xs text-gray-400">Weighted: Design 20% / Production 60% / Install 20%</span>
+            </div>
+
+            <TrackBar
+              label="Design"
+              stage={job.designStage || "Job Assigned"}
+              progress={job.designProgress || 0}
+              stages={[
+                "Job Assigned", "Design Brief Received", "Site Measure Received",
+                "Site Measure Reviewed", "Concept Design Started", "Concept Design Completed",
+                "Client Review", "Revisions in Progress", "Client Approval Received",
+                "Working Drawings Completed", "Cabinet Vision Completed",
+                "Technical Review Completed", "Final Review", "Released to Production",
+              ]}
+              color="orange"
+              canAdvance={false}
+              onAdvance={() => {}}
+              advancing={false}
+            />
+
+            <TrackBar
+              label="Production"
+              stage={job.productionStage || "Not Started"}
+              progress={job.productionProgress || 0}
+              stages={PROD_STAGES}
+              color="orange"
+              canAdvance={canAdvanceProd}
+              onAdvance={advanceProduction}
+              advancing={advancing}
+            />
+
+            <TrackBar
+              label="Install"
+              stage={job.installStage || "Not Started"}
+              progress={job.installProgress || 0}
+              stages={INSTALL_STAGES}
+              color="orange"
+              canAdvance={canAdvanceInstall}
+              onAdvance={advanceInstall}
+              advancing={advancing}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
