@@ -1,646 +1,1171 @@
 "use client";
 
 /**
- * Jobs page — includes Slice 7b (edit/delete) and Slice 9b (multi-track progress).
+ * Job Assignment Module — app/(app)/jobs/page.tsx
  *
- * Job detail now shows three progress tracks (Design / Production / Install)
- * with stage pills, progress bars, weighted overall %, and role-conditional
- * "update stage" controls.
+ * Role-aware: shows a different view depending on who is logged in.
+ *   cabinet_maker / installer / employee / contractor → My Jobs (Cabinetmaker view)
+ *   supervisor                                        → Workshop Queue
+ *   admin / manager / managing_director               → Purchase Alerts + PO Tracker
  *
- * Backend contract (Slice 9a):
- *   GET    /jobs/track-stages               → { design, production, install, weights }
- *   PATCH  /jobs/{id}/production-stage       → Job  (body: { stage })
- *   PATCH  /jobs/{id}/install-stage          → Job  (body: { stage })
+ * API endpoints to add to server.py:
+ *   GET  /jobs                         → list (backend filters by role automatically)
+ *   GET  /jobs/:id                     → single job detail
+ *   PATCH /jobs/:id/assign             → { worker_id }
+ *   PATCH /jobs/:id/start              → advance current active stage
+ *   PATCH /jobs/:id/block              → { reason, detail, notify_supervisor, notify_admin, blocked_until }
+ *   PATCH /jobs/:id/unblock            → {}
+ *   POST  /jobs/:id/materials/record   → { material_id, qty_used, offcut, offcut_dims, notes }
+ *   GET   /purchase-orders             → list
+ *   POST  /purchase-orders             → { job_id, material_id, supplier, qty }
+ *   PATCH /purchase-orders/:id/receive → { items: [{ material_id, qty_received }] }
+ *   POST  /push/subscribe              → { subscription } (push notification registration)
  */
 
 import { useState, useEffect } from "react";
-import { api } from "@/lib/api/client";
-import { Job } from "@/lib/types";
-import { useAuth } from "@/lib/store/auth";
+import { format, isPast, parseISO } from "date-fns";
+import { useAuth } from "@/lib/useAuth";
+import api from "@/lib/api/client";
 
-const STATUSES = ["Received", "In Progress", "Ready", "Delivered"];
-const PRIORITIES = ["Low", "Medium", "High"];
-const statusColors: Record<string, string> = {
-  Received: "bg-gray-100 text-gray-800",
-  "In Progress": "bg-yellow-100 text-yellow-800",
-  Ready: "bg-green-100 text-green-800",
-  Delivered: "bg-blue-100 text-blue-800",
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type JobStatus   = "Ready" | "In Progress" | "Waiting Material" | "Blocked" | "Done";
+type Priority    = "Low" | "Normal" | "High";
+type StageStatus = "pending" | "active" | "done";
+type POStatus    = "Draft" | "Ordered" | "Partial" | "Received";
+type WorkerLoad  = "Low" | "Normal" | "High";
+
+interface Stage   { name: string; status: StageStatus; }
+interface BOMItem {
+  id: string; material: string; qty: number; unit: string;
+  location?: string; status: "confirmed" | "shortage" | "pending";
+  shortageQty?: number; poRef?: string; eta?: string;
+}
+interface LogEntry { timestamp: string; actor: string; action: string; detail?: string; }
+interface Job {
+  id: string; ref: string; client: string; description: string;
+  status: JobStatus; priority: Priority;
+  assignedTo?: { id: string; name: string };
+  dueDate?: string; stages: Stage[]; bom: BOMItem[];
+  activityLog: LogEntry[]; blockReason?: string; blockDetail?: string;
+}
+interface Worker { id: string; name: string; role: string; activeJobs: number; load: WorkerLoad; }
+interface POItem  { material: string; qty: number; received: number; unit: string; }
+interface PurchaseOrder {
+  id: string; ref: string; supplier: string; status: POStatus;
+  jobRef: string; jobId: string; items: POItem[];
+  orderedAt?: string; eta?: string; shortageNote?: string;
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
+
+const STATUS_BADGE: Record<JobStatus, string> = {
+  "Ready":            "badge-success",
+  "In Progress":      "badge-brand",
+  "Waiting Material": "badge-warning",
+  "Blocked":          "badge-danger",
+  "Done":             "badge-neutral",
 };
-
-// Track stage definitions — match backend constants
-const PROD_STAGES = ["Not Started", "Materials In", "CNC Cut", "Assembling", "Hardware Fitted", "QA Passed"];
-const INSTALL_STAGES = ["Not Started", "Delivered", "Installed", "Signed Off"];
-
-// Roles that can advance each track
-const PROD_ROLES = new Set(["supervisor", "manager", "admin", "managing_director"]);
-const INSTALL_ROLES = new Set(["installer", "supervisor", "manager", "admin", "managing_director"]);
-
-const emptyForm = {
-  client: "",
-  phone: "",
-  projectName: "",
-  siteAddress: "",
-  dueDate: "",
-  priority: "Medium",
-  status: "Received",
-  notes: "",
+const PRIORITY_BADGE: Record<Priority, string> = {
+  "Low": "badge-neutral", "Normal": "badge-info", "High": "badge-danger",
 };
+const LOAD_BADGE: Record<WorkerLoad, string> = {
+  "Low": "badge-success", "Normal": "badge-warning", "High": "badge-danger",
+};
+const BLOCK_REASONS = [
+  "Waiting for material", "Machine down", "Drawing not ready",
+  "Client change request", "Other",
+];
 
-export default function JobsPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("all");
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+// ─── Mock data (remove once backend endpoints are live) ───────────────────────
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyForm);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+const MOCK_JOBS: Job[] = [
+  {
+    id:"j1", ref:"AZJ-0892", client:"Smith", description:"Kitchen Carcass",
+    status:"Ready", priority:"High",
+    dueDate: new Date(Date.now()+2*86400000).toISOString(),
+    assignedTo:{id:"w1",name:"Marco Rossi"},
+    stages:[
+      {name:"Cutting",status:"pending"},{name:"Edge Banding",status:"pending"},
+      {name:"Drilling",status:"pending"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[
+      {id:"b1",material:"18mm White Moisture Ply",qty:12,unit:"sheets",location:"Bay 3 — Rack B",status:"confirmed"},
+      {id:"b2",material:"18mm White Melamine",qty:8,unit:"sheets",location:"Bay 1 — Rack A",status:"confirmed"},
+      {id:"b3",material:"ABS Edge 2mm White Gloss",qty:45,unit:"metres",location:"Edging cabinet",status:"confirmed"},
+      {id:"b4",material:"Blum Tandem 550mm",qty:6,unit:"pairs",location:"Hardware shelf H4",status:"confirmed"},
+    ],
+    activityLog:[
+      {timestamp:new Date(Date.now()-3600000).toISOString(),actor:"Sarah Chen",action:"Materials confirmed",detail:"All BOM items verified in stock"},
+      {timestamp:new Date(Date.now()-7200000).toISOString(),actor:"Sam Kowalski",action:"Job assigned",detail:"Assigned to Marco Rossi"},
+    ],
+  },
+  {
+    id:"j2", ref:"AZJ-0891", client:"Johnson", description:"Wardrobe Module B",
+    status:"In Progress", priority:"Normal",
+    dueDate: new Date(Date.now()+86400000).toISOString(),
+    assignedTo:{id:"w1",name:"Marco Rossi"},
+    stages:[
+      {name:"Cutting",status:"done"},{name:"Edge Banding",status:"active"},
+      {name:"Drilling",status:"pending"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[
+      {id:"b5",material:"16mm White Melamine",qty:10,unit:"sheets",location:"Bay 2",status:"confirmed"},
+      {id:"b6",material:"Grass Drawer Runners",qty:4,unit:"pairs",location:"Hardware H2",status:"confirmed"},
+    ],
+    activityLog:[
+      {timestamp:new Date(Date.now()-1800000).toISOString(),actor:"Marco Rossi",action:"Stage started",detail:"Edge Banding begun"},
+      {timestamp:new Date(Date.now()-5*3600000).toISOString(),actor:"Marco Rossi",action:"Stage completed",detail:"Cutting done — 12 parts cut"},
+    ],
+  },
+  {
+    id:"j3", ref:"AZJ-0893", client:"Williams", description:"Laundry Cabinets",
+    status:"Waiting Material", priority:"High",
+    dueDate: new Date(Date.now()-86400000).toISOString(),
+    assignedTo:{id:"w2",name:"Liam O'Brien"},
+    stages:[
+      {name:"Cutting",status:"pending"},{name:"Edge Banding",status:"pending"},
+      {name:"Drilling",status:"pending"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[
+      {id:"b7",material:"12mm White Moisture Ply",qty:8,unit:"sheets",status:"shortage",shortageQty:3,poRef:"PO-2024-019",eta:"Fri 20 Sep"},
+      {id:"b8",material:"Blum Hinge Clip-On",qty:20,unit:"units",location:"Hardware H1",status:"confirmed"},
+    ],
+    activityLog:[
+      {timestamp:new Date(Date.now()-4*3600000).toISOString(),actor:"Sarah Chen",action:"PO raised",detail:"PO-2024-019 sent to Bunnings — ETA Friday"},
+      {timestamp:new Date(Date.now()-6*3600000).toISOString(),actor:"System",action:"Material shortage detected",detail:"12mm White Moisture Ply — 3 sheets short"},
+    ],
+    blockReason:"Waiting for material",
+    blockDetail:"12mm White Moisture Ply — 3 sheets short. PO-2024-019 with Bunnings, ETA Fri 20 Sep.",
+  },
+  {
+    id:"j4", ref:"AZJ-0888", client:"Brown", description:"TV Unit + Shelving",
+    status:"Blocked", priority:"High",
+    dueDate: new Date(Date.now()-2*86400000).toISOString(),
+    assignedTo:{id:"w3",name:"Danny Nguyen"},
+    stages:[
+      {name:"Cutting",status:"done"},{name:"Edge Banding",status:"pending"},
+      {name:"Drilling",status:"pending"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[],
+    activityLog:[
+      {timestamp:new Date(Date.now()-2*3600000).toISOString(),actor:"Danny Nguyen",action:"Job blocked",detail:"Machine down — panel saw needs service"},
+    ],
+    blockReason:"Machine down",
+    blockDetail:"Panel saw belt snapped. Technician booked for tomorrow morning.",
+  },
+  {
+    id:"j5", ref:"AZJ-0890", client:"Davies", description:"Bathroom Vanity",
+    status:"Ready", priority:"Normal",
+    dueDate: new Date(Date.now()+3*86400000).toISOString(),
+    assignedTo:{id:"w2",name:"Liam O'Brien"},
+    stages:[
+      {name:"Cutting",status:"pending"},{name:"Edge Banding",status:"pending"},
+      {name:"Drilling",status:"pending"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[], activityLog:[],
+  },
+  {
+    id:"j6", ref:"AZJ-0895", client:"Taylor", description:"Office Storage",
+    status:"In Progress", priority:"Low",
+    dueDate: new Date(Date.now()+5*86400000).toISOString(),
+    assignedTo:{id:"w3",name:"Danny Nguyen"},
+    stages:[
+      {name:"Cutting",status:"done"},{name:"Edge Banding",status:"done"},
+      {name:"Drilling",status:"active"},{name:"Assembly",status:"pending"},
+      {name:"Finishing",status:"pending"},
+    ],
+    bom:[], activityLog:[],
+  },
+];
 
+const MOCK_WORKERS: Worker[] = [
+  {id:"w1",name:"Marco Rossi",  role:"cabinet_maker",activeJobs:2,load:"Normal"},
+  {id:"w2",name:"Liam O'Brien", role:"cabinet_maker",activeJobs:1,load:"Low"},
+  {id:"w3",name:"Danny Nguyen", role:"cabinet_maker",activeJobs:2,load:"Normal"},
+];
+
+const MOCK_POS: PurchaseOrder[] = [
+  {
+    id:"po1",ref:"PO-2024-019",supplier:"Bunnings",status:"Ordered",
+    jobRef:"AZJ-0893",jobId:"j3",eta:"Fri 20 Sep",
+    items:[{material:"12mm White Moisture Ply",qty:3,received:0,unit:"sheets"}],
+    orderedAt:new Date(Date.now()-4*3600000).toISOString(),
+    shortageNote:"Unblocks AZJ-0893 once received.",
+  },
+  {
+    id:"po2",ref:"PO-2024-018",supplier:"Häfele",status:"Partial",
+    jobRef:"AZJ-0890",jobId:"j5",eta:"Mon 23 Sep",
+    items:[{material:"Grass Nova Pro runners",qty:10,received:4,unit:"pairs"}],
+    orderedAt:new Date(Date.now()-2*86400000).toISOString(),
+  },
+  {
+    id:"po3",ref:"PO-2024-017",supplier:"Laminex",status:"Received",
+    jobRef:"AZJ-0895",jobId:"j6",
+    items:[{material:"Laminex Chalk 16mm MDF",qty:6,received:6,unit:"sheets"}],
+    orderedAt:new Date(Date.now()-5*86400000).toISOString(),
+  },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function activeStage(job: Job) {
+  return job.stages.find(s => s.status === "active") ?? job.stages.find(s => s.status === "pending");
+}
+function stageProgress(job: Job) {
+  const done = job.stages.filter(s => s.status === "done").length;
+  return { done, total: job.stages.length };
+}
+function dueBadge(iso?: string) {
+  if (!iso) return null;
+  const d = parseISO(iso);
+  const label = format(d, "d MMM");
+  if (isPast(d)) return <span className="badge badge-danger">{label} — Overdue</span>;
+  const diff = Math.ceil((d.getTime() - Date.now()) / 86400000);
+  if (diff <= 1) return <span className="badge badge-warning">{label}</span>;
+  return <span className="badge badge-neutral">{label}</span>;
+}
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+function IconCheck() {
+  return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
+function IconClose({ size = 16 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12" strokeLinecap="round"/></svg>;
+}
+function IconWarn() {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
+
+// ─── Stage Pills ──────────────────────────────────────────────────────────────
+
+function StagePills({ stages }: { stages: Stage[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {stages.map((s, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+            s.status === "done"   ? "bg-success-light text-success-dark" :
+            s.status === "active" ? "bg-brand-orange text-white" :
+                                    "bg-ink-100 text-ink-500"
+          }`}>
+            {s.status === "done" && <IconCheck />}
+            {s.name}
+          </span>
+          {i < stages.length - 1 && <span className="text-ink-300 text-xs">›</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Checkbox ─────────────────────────────────────────────────────────────────
+
+function Checkbox({ checked, onChange, label, sublabel }: {
+  checked: boolean; onChange: (v: boolean) => void; label: string; sublabel?: string;
+}) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer" onClick={() => onChange(!checked)}>
+      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+        checked ? "bg-brand-orange border-brand-orange" : "border-ink-300"
+      }`}>
+        {checked && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><path d="M20 6 9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </div>
+      <div>
+        <p className="text-sm text-ink-800">{label}</p>
+        {sublabel && <p className="text-xs text-ink-500">{sublabel}</p>}
+      </div>
+    </label>
+  );
+}
+
+// ─── Bottom Sheet ─────────────────────────────────────────────────────────────
+
+function Sheet({ open, onClose, title, children }: {
+  open: boolean; onClose: () => void; title: string; children: React.ReactNode;
+}) {
   useEffect(() => {
-    loadJobs();
-  }, []);
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [open]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-t-2xl shadow-2xl max-h-[90dvh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-ink-200">
+          <h3 className="font-heading text-base font-semibold text-ink-900">{title}</h3>
+          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-ink-100 text-ink-500" onClick={onClose}>
+            <IconClose />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4 flex-1">{children}</div>
+      </div>
+    </div>
+  );
+}
 
-  const loadJobs = async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await api.get<Job[]>("/jobs");
-      setJobs(data || []);
-    } catch (err) {
-      setLoadError("Couldn't load jobs. Check your connection and try again.");
-    } finally {
-      setLoading(false);
-    }
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+function Modal({ open, onClose, title, children, maxW = "max-w-md" }: {
+  open: boolean; onClose: () => void; title: string; children: React.ReactNode; maxW?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" />
+      <div
+        className={`relative bg-white rounded-2xl shadow-2xl w-full ${maxW} flex flex-col max-h-[90dvh]`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-ink-200">
+          <h3 className="font-heading text-base font-semibold text-ink-900">{title}</h3>
+          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-ink-100 text-ink-500" onClick={onClose}>
+            <IconClose />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-5 flex-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Block Job Sheet ──────────────────────────────────────────────────────────
+
+type BlockData = { reason: string; detail: string; notifySupervisor: boolean; notifyAdmin: boolean; blockedUntil: string; };
+
+function BlockJobSheet({ open, onClose, jobRef, onSubmit }: {
+  open: boolean; onClose: () => void; jobRef: string; onSubmit: (d: BlockData) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [detail, setDetail] = useState("");
+  const [notifySupervisor, setNotifySupervisor] = useState(true);
+  const [notifyAdmin, setNotifyAdmin] = useState(true);
+  const [blockedUntil, setBlockedUntil] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!reason) return;
+    setSubmitting(true);
+    try { await onSubmit({ reason, detail, notifySupervisor, notifyAdmin, blockedUntil }); onClose(); }
+    finally { setSubmitting(false); }
   };
-
-  const visibleJobs = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
-
-  const createJob = async () => {
-    if (!createForm.client.trim()) return;
-    setCreating(true);
-    setCreateError(null);
-    try {
-      await api.post("/jobs", createForm);
-      setCreateForm(emptyForm);
-      setShowCreateForm(false);
-      loadJobs();
-    } catch (err) {
-      setCreateError("Couldn't create this job — it was not saved. Check your connection and try again.");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  if (selectedJob) {
-    return (
-      <JobDetail
-        job={selectedJob}
-        onBack={() => setSelectedJob(null)}
-        onUpdated={(updated) => {
-          setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
-          setSelectedJob(updated);
-        }}
-        onDeleted={(id) => {
-          setJobs((prev) => prev.filter((j) => j.id !== id));
-          setSelectedJob(null);
-        }}
-      />
-    );
-  }
 
   return (
-    <div className="page space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="page-title">Jobs</h1>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="btn-primary btn-sm"
-        >
-          + New Job
+    <Sheet open={open} onClose={onClose} title={`Block ${jobRef}`}>
+      <div className="flex flex-col gap-4">
+        <div className="field">
+          <label className="label">Reason *</label>
+          <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
+            <option value="">Select reason…</option>
+            {BLOCK_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+
+        {reason === "Waiting for material" && (
+          <div className="field">
+            <label className="label">Which material?</label>
+            <input className="input" placeholder="e.g. 12mm White Moisture Ply — 3 sheets short" value={detail} onChange={e => setDetail(e.target.value)} />
+          </div>
+        )}
+        {reason === "Machine down" && (
+          <div className="field">
+            <label className="label">Which machine?</label>
+            <input className="input" placeholder="e.g. Panel saw — belt snapped" value={detail} onChange={e => setDetail(e.target.value)} />
+          </div>
+        )}
+        {["Other", "Drawing not ready", "Client change request"].includes(reason) && (
+          <div className="field">
+            <label className="label">Details</label>
+            <textarea className="input" rows={3} placeholder="Add context…" value={detail} onChange={e => setDetail(e.target.value)} />
+          </div>
+        )}
+
+        <div className="field">
+          <label className="label">Blocked until (optional)</label>
+          <input type="date" className="input" value={blockedUntil} onChange={e => setBlockedUntil(e.target.value)} />
+        </div>
+
+        <div className="card p-3 flex flex-col gap-3">
+          <p className="eyebrow">Notify</p>
+          <Checkbox checked={notifySupervisor} onChange={setNotifySupervisor} label="Supervisor" />
+          <Checkbox checked={notifyAdmin} onChange={setNotifyAdmin} label="Admin" />
+        </div>
+
+        <button className="btn-danger w-full" disabled={!reason || submitting} onClick={handleSubmit}>
+          {submitting ? "Blocking…" : "Block Job"}
         </button>
       </div>
+    </Sheet>
+  );
+}
 
-      {showCreateForm && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-          <input
-            type="text"
-            placeholder="Client name"
-            value={createForm.client}
-            onChange={(e) => setCreateForm({ ...createForm, client: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="text"
-            placeholder="Phone"
-            value={createForm.phone}
-            onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="text"
-            placeholder="Project name"
-            value={createForm.projectName}
-            onChange={(e) => setCreateForm({ ...createForm, projectName: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="text"
-            placeholder="Site address"
-            value={createForm.siteAddress}
-            onChange={(e) => setCreateForm({ ...createForm, siteAddress: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <div className="grid grid-cols-2 gap-2">
+// ─── Record Material Sheet ────────────────────────────────────────────────────
+
+type RecordData = { materialId: string; qty: number; offcut: boolean; offcutDims: string; notes: string; };
+
+function RecordMaterialSheet({ open, onClose, bom, onSubmit }: {
+  open: boolean; onClose: () => void; bom: BOMItem[]; onSubmit: (d: RecordData) => Promise<void>;
+}) {
+  const [materialId, setMaterialId] = useState(bom[0]?.id ?? "");
+  const [qty, setQty] = useState(1);
+  const [offcut, setOffcut] = useState(false);
+  const [offcutDims, setOffcutDims] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const selected = bom.find(b => b.id === materialId);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try { await onSubmit({ materialId, qty, offcut, offcutDims, notes }); onClose(); }
+    finally { setSubmitting(false); }
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Record Material Used">
+      <div className="flex flex-col gap-4">
+        <div className="field">
+          <label className="label">Material</label>
+          <select className="input" value={materialId} onChange={e => setMaterialId(e.target.value)}>
+            {bom.map(b => <option key={b.id} value={b.id}>{b.material}</option>)}
+          </select>
+          {selected && <span className="field-hint">Planned qty: {selected.qty} {selected.unit}</span>}
+        </div>
+
+        <div className="field">
+          <label className="label">Qty used ({selected?.unit ?? "units"})</label>
+          <div className="flex items-center gap-3">
+            <button className="btn-secondary w-11 h-11 text-xl font-bold flex-shrink-0" onClick={() => setQty(q => Math.max(0, q - 1))}>−</button>
+            <input
+              type="number" className="input text-center text-xl font-semibold tabular" value={qty}
+              onChange={e => setQty(Math.max(0, Number(e.target.value)))}
+            />
+            <button className="btn-secondary w-11 h-11 text-xl font-bold flex-shrink-0" onClick={() => setQty(q => q + 1)}>+</button>
+          </div>
+        </div>
+
+        <Checkbox
+          checked={offcut} onChange={setOffcut}
+          label="Return offcut to stock"
+          sublabel="Record dimensions of usable leftover"
+        />
+
+        {offcut && (
+          <div className="field">
+            <label className="label">Offcut dimensions (mm)</label>
+            <input className="input" placeholder="e.g. 1200 × 600" value={offcutDims} onChange={e => setOffcutDims(e.target.value)} />
+          </div>
+        )}
+
+        <div className="field">
+          <label className="label">Notes (optional)</label>
+          <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+        </div>
+
+        <button className="btn-primary w-full" disabled={submitting} onClick={handleSubmit}>
+          {submitting ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+// ─── Job Detail Sheet ─────────────────────────────────────────────────────────
+
+function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMaterial }: {
+  job: Job | null; open: boolean; onClose: () => void;
+  onBlock: (j: Job) => void; onStartStage: (j: Job) => void; onRecordMaterial: (j: Job) => void;
+}) {
+  if (!job) return null;
+  const prog        = stageProgress(job);
+  const current     = activeStage(job);
+  const allConfirmed = job.bom.length > 0 && job.bom.every(b => b.status === "confirmed");
+  const hasShortage  = job.bom.some(b => b.status === "shortage");
+  const activeStg    = job.stages.find(s => s.status === "active");
+
+  return (
+    <Sheet open={open} onClose={onClose} title={job.ref}>
+      <div className="flex flex-col gap-5">
+
+        {/* Summary banner */}
+        <div className="rounded-xl bg-ink-900 text-white p-4">
+          <div className="flex items-start justify-between gap-2 mb-2">
             <div>
-              <label className="text-xs text-gray-500">Due date</label>
-              <input
-                type="date"
-                value={createForm.dueDate}
-                onChange={(e) => setCreateForm({ ...createForm, dueDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
+              <p className="font-heading text-lg font-semibold">{job.client}</p>
+              <p className="text-sm text-white/70">{job.description}</p>
             </div>
-            <div>
-              <label className="text-xs text-gray-500">Priority</label>
-              <select
-                value={createForm.priority}
-                onChange={(e) => setCreateForm({ ...createForm, priority: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+            <span className={`badge ${STATUS_BADGE[job.status]}`}>{job.status}</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-white/60 mt-1">
+            <span>{prog.done}/{prog.total} stages</span>
+            {job.dueDate && <span>Due {format(parseISO(job.dueDate), "d MMM")}</span>}
+          </div>
+          <div className="mt-3"><StagePills stages={job.stages} /></div>
+        </div>
+
+        {/* Material status */}
+        {allConfirmed && (
+          <div className="flex items-center gap-2 p-3 bg-success-light rounded-lg text-success-dark text-sm font-medium">
+            <IconCheck />
+            All materials confirmed — ready to start
+          </div>
+        )}
+        {hasShortage && (
+          <div className="flex items-center gap-2 p-3 bg-warning-light rounded-lg text-warning-dark text-sm font-medium">
+            <IconWarn />
+            Material shortage — waiting on order
+          </div>
+        )}
+
+        {/* BOM */}
+        {job.bom.length > 0 && (
+          <div>
+            <p className="eyebrow mb-2.5">Materials (BOM)</p>
+            <div className="card overflow-hidden">
+              {job.bom.map((item, i) => (
+                <div key={item.id} className={`flex items-start gap-3 px-4 py-3 ${i < job.bom.length - 1 ? "border-b border-ink-100" : ""}`}>
+                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                    item.status === "confirmed" ? "bg-success" : item.status === "shortage" ? "bg-danger" : "bg-ink-300"
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-ink-900">{item.material}</p>
+                    <p className="text-xs text-ink-500">{item.qty} {item.unit}</p>
+                    {item.status === "confirmed" && item.location && (
+                      <p className="text-xs text-success-dark mt-0.5">📍 {item.location}</p>
+                    )}
+                    {item.status === "shortage" && (
+                      <p className="text-xs text-danger-dark mt-0.5">
+                        Short {item.shortageQty} {item.unit} · {item.poRef} ETA {item.eta}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          {createError && <div className="alert-danger">{createError}</div>}
-          <button
-            onClick={createJob}
-            disabled={creating}
-            className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {creating ? "Creating..." : "Create Job"}
-          </button>
+        )}
+
+        {/* Block reason */}
+        {(job.status === "Blocked" || job.status === "Waiting Material") && job.blockReason && (
+          <div className="alert-danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01" strokeLinecap="round"/></svg>
+            <div>
+              <p className="font-semibold">{job.blockReason}</p>
+              {job.blockDetail && <p className="text-xs mt-0.5 opacity-80">{job.blockDetail}</p>}
+            </div>
+          </div>
+        )}
+
+        {/* Activity log */}
+        {job.activityLog.length > 0 && (
+          <div>
+            <p className="eyebrow mb-2.5">Activity</p>
+            <div className="flex flex-col gap-2">
+              {job.activityLog.map((log, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-ink-300 mt-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-ink-500">{log.actor} · {format(parseISO(log.timestamp), "d MMM h:mm a")}</p>
+                    <p className="text-sm text-ink-800">{log.action}</p>
+                    {log.detail && <p className="text-xs text-ink-500">{log.detail}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex flex-col gap-2.5 pt-1">
+          {job.bom.length > 0 && job.status !== "Done" && (
+            <button className="btn-secondary w-full" onClick={() => onRecordMaterial(job)}>
+              Record Material Used
+            </button>
+          )}
+          {(job.status === "Ready" || job.status === "In Progress") && current && (
+            <button className="btn-primary w-full" onClick={() => onStartStage(job)}>
+              {job.status === "Ready" ? `Start — ${current.name}` : `Complete — ${activeStg?.name ?? current.name}`}
+            </button>
+          )}
+          {job.status !== "Done" && job.status !== "Blocked" && (
+            <button
+              className="btn w-full border border-danger/40 text-danger hover:bg-danger-light"
+              onClick={() => onBlock(job)}
+            >
+              Block Job
+            </button>
+          )}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW 1 — CABINETMAKER / FLOOR WORKER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CM_FILTERS = ["All", "Ready", "In Progress", "Waiting Material", "Blocked", "Done"] as const;
+type CMFilter = typeof CM_FILTERS[number];
+
+function CabinetmakerView({ userId }: { userId: string }) {
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<CMFilter>("All");
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [recordOpen, setRecordOpen] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.get<Job[]>("/jobs");
+        setJobs(data);
+      } catch {
+        // Mock data while backend endpoints are being built
+        setJobs(MOCK_JOBS.filter(j => j.assignedTo?.id === "w1"));
+      } finally { setLoading(false); }
+    })();
+  }, [userId]);
+
+  const filtered = filter === "All" ? jobs : jobs.filter(j => j.status === filter);
+  const stats = {
+    active:  jobs.filter(j => j.status === "In Progress").length,
+    ready:   jobs.filter(j => j.status === "Ready").length,
+    waiting: jobs.filter(j => j.status === "Waiting Material" || j.status === "Blocked").length,
+  };
+
+  const handleStartStage = async (job: Job) => {
+    try {
+      await api.patch(`/jobs/${job.id}/start`, {});
+      setJobs(prev => prev.map(j => {
+        if (j.id !== job.id) return j;
+        let activated = false;
+        const stages = j.stages.map(s => {
+          if (s.status === "active") return { ...s, status: "done" as StageStatus };
+          if (!activated && s.status === "pending") { activated = true; return { ...s, status: "active" as StageStatus }; }
+          return s;
+        });
+        const newStatus: JobStatus = stages.every(s => s.status === "done") ? "Done" : "In Progress";
+        return { ...j, status: newStatus, stages };
+      }));
+    } catch { /* optimistic update already applied */ }
+  };
+
+  const handleBlock = async (d: BlockData) => {
+    if (!selectedJob) return;
+    try {
+      await api.patch(`/jobs/${selectedJob.id}/block`, {
+        reason: d.reason, detail: d.detail,
+        notify_supervisor: d.notifySupervisor, notify_admin: d.notifyAdmin,
+        blocked_until: d.blockedUntil || null,
+      });
+    } catch { /* best effort */ }
+    setJobs(prev => prev.map(j => j.id === selectedJob.id
+      ? { ...j, status: "Blocked", blockReason: d.reason, blockDetail: d.detail } : j
+    ));
+  };
+
+  const handleRecordMaterial = async (d: RecordData) => {
+    if (!selectedJob) return;
+    try {
+      await api.post(`/jobs/${selectedJob.id}/materials/record`, {
+        material_id: d.materialId, qty_used: d.qty,
+        offcut: d.offcut, offcut_dims: d.offcutDims, notes: d.notes,
+      });
+    } catch { /* best effort */ }
+  };
+
+  return (
+    <div className="page pb-nav">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">My Jobs</h1>
+          <p className="page-subtitle">Your assigned production work</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {[
+          { label: "Active",  value: stats.active,  color: "text-brand-orange" },
+          { label: "Ready",   value: stats.ready,   color: "text-success" },
+          { label: "Waiting", value: stats.waiting, color: "text-warning" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="stat items-center text-center">
+            <p className="stat-label">{label}</p>
+            <p className={`stat-value ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter tabs */}
+      <div className="tabs mb-4">
+        {CM_FILTERS.map(f => (
+          <button key={f} className={`tab ${filter === f ? "tab-active" : ""}`} onClick={() => setFilter(f)}>{f}</button>
+        ))}
+      </div>
+
+      {/* Job cards */}
+      {loading ? (
+        <div className="flex flex-col gap-3">{[1,2,3].map(i => <div key={i} className="skeleton h-28 rounded-card" />)}</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty mt-6">
+          <p className="empty-title">No jobs here</p>
+          <p className="empty-body">Check another filter or speak with your supervisor.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {filtered.map(job => {
+            const prog    = stageProgress(job);
+            const current = activeStage(job);
+            return (
+              <button
+                key={job.id}
+                className="card-interactive text-left w-full p-4"
+                onClick={() => { setSelectedJob(job); setDetailOpen(true); }}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <p className="ref">{job.ref}</p>
+                    <p className="font-heading font-semibold text-ink-900">{job.client} — {job.description}</p>
+                  </div>
+                  <span className={`badge ${STATUS_BADGE[job.status]} flex-shrink-0`}>{job.status}</span>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap mt-2">
+                  {dueBadge(job.dueDate)}
+                  <span className="text-xs text-ink-500">{prog.done}/{prog.total} stages</span>
+                  {current && <span className="text-xs text-ink-500">Next: {current.name}</span>}
+                </div>
+                {job.status === "Blocked" && job.blockReason && (
+                  <p className="text-xs text-danger-dark mt-1.5">⛔ {job.blockReason}</p>
+                )}
+                {/* Stage progress bar */}
+                <div className="flex gap-0.5 mt-3">
+                  {job.stages.map((s, i) => (
+                    <div key={i} className={`h-1.5 flex-1 rounded-full ${
+                      s.status === "done" ? "bg-success" : s.status === "active" ? "bg-brand-orange" : "bg-ink-200"
+                    }`} />
+                  ))}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {loadError && <div className="alert-danger">{loadError}</div>}
+      <JobDetailSheet
+        job={selectedJob} open={detailOpen} onClose={() => setDetailOpen(false)}
+        onBlock={j => { setSelectedJob(j); setDetailOpen(false); setBlockOpen(true); }}
+        onStartStage={handleStartStage}
+        onRecordMaterial={j => { setSelectedJob(j); setDetailOpen(false); setRecordOpen(true); }}
+      />
+      <BlockJobSheet
+        open={blockOpen} onClose={() => setBlockOpen(false)}
+        jobRef={selectedJob?.ref ?? ""} onSubmit={handleBlock}
+      />
+      <RecordMaterialSheet
+        open={recordOpen} onClose={() => setRecordOpen(false)}
+        bom={selectedJob?.bom ?? []} onSubmit={handleRecordMaterial}
+      />
+    </div>
+  );
+}
 
-      {/* Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {["all", ...STATUSES].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-4 py-2 rounded-full font-medium whitespace-nowrap transition-colors ${
-              filter === status
-                ? "bg-orange-500 text-white"
-                : "bg-gray-200 text-gray-800 hover:bg-gray-300"
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW 2 — SUPERVISOR
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function SupervisorView() {
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reassignJob, setReassignJob] = useState<Job | null>(null);
+  const [blockJob, setBlockJob] = useState<Job | null>(null);
+  const [selectedWorker, setSelectedWorker] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
+        setJobs(j); setWorkers(w);
+      } catch {
+        setJobs(MOCK_JOBS); setWorkers(MOCK_WORKERS);
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const stats = {
+    active:  jobs.filter(j => j.status === "In Progress").length,
+    ready:   jobs.filter(j => j.status === "Ready").length,
+    waiting: jobs.filter(j => j.status === "Waiting Material").length,
+    blocked: jobs.filter(j => j.status === "Blocked").length,
+  };
+
+  const handleReassign = async () => {
+    if (!reassignJob || !selectedWorker) return;
+    const worker = workers.find(w => w.id === selectedWorker);
+    try { await api.patch(`/jobs/${reassignJob.id}/assign`, { worker_id: selectedWorker }); }
+    catch { /* optimistic */ }
+    setJobs(prev => prev.map(j => j.id === reassignJob.id
+      ? { ...j, assignedTo: { id: selectedWorker, name: worker?.name ?? "" } } : j
+    ));
+    setReassignJob(null);
+  };
+
+  const handleBlock = async (d: BlockData) => {
+    if (!blockJob) return;
+    try {
+      await api.patch(`/jobs/${blockJob.id}/block`, {
+        reason: d.reason, detail: d.detail,
+        notify_supervisor: d.notifySupervisor, notify_admin: d.notifyAdmin,
+        blocked_until: d.blockedUntil || null,
+      });
+    } catch { /* best effort */ }
+    setJobs(prev => prev.map(j => j.id === blockJob.id
+      ? { ...j, status: "Blocked", blockReason: d.reason } : j
+    ));
+  };
+
+  return (
+    <div className="page pb-nav">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Workshop Queue</h1>
+          <p className="page-subtitle">All active production jobs</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {[
+          { label: "Active",  value: stats.active,  color: "text-brand-orange" },
+          { label: "Ready",   value: stats.ready,   color: "text-success" },
+          { label: "Waiting", value: stats.waiting, color: "text-warning" },
+          { label: "Blocked", value: stats.blocked, color: "text-danger" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="stat">
+            <p className="stat-label">{label}</p>
+            <p className={`stat-value ${color}`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {loading ? <div className="skeleton h-48 rounded-card" /> : (
+        <div className="table-wrap">
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Job</th><th>Client</th><th>Status</th>
+                  <th>Assigned To</th><th>Stage</th>
+                  <th>Due</th><th>Priority</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map(job => {
+                  const overdue = job.dueDate && isPast(parseISO(job.dueDate)) && job.status !== "Done";
+                  const current = activeStage(job);
+                  return (
+                    <tr key={job.id} className={job.status === "Blocked" || overdue ? "bg-danger-light/30" : ""}>
+                      <td><span className="ref">{job.ref}</span></td>
+                      <td className="font-medium text-ink-900">{job.client}</td>
+                      <td><span className={`badge ${STATUS_BADGE[job.status]}`}>{job.status}</span></td>
+                      <td className="text-ink-600">{job.assignedTo?.name ?? <span className="text-ink-400 italic">Unassigned</span>}</td>
+                      <td className="text-ink-600">{current?.name ?? "—"}</td>
+                      <td>{dueBadge(job.dueDate) ?? <span className="text-ink-400">—</span>}</td>
+                      <td><span className={`badge ${PRIORITY_BADGE[job.priority]}`}>{job.priority}</span></td>
+                      <td>
+                        <div className="flex gap-1.5">
+                          <button
+                            className="btn-sm btn-secondary"
+                            onClick={() => { setReassignJob(job); setSelectedWorker(job.assignedTo?.id ?? ""); }}
+                          >
+                            Reassign
+                          </button>
+                          {job.status !== "Blocked" && job.status !== "Done" && (
+                            <button
+                              className="px-2.5 py-1 rounded-md text-[0.8125rem] font-semibold border border-danger/40 text-danger hover:bg-danger-light inline-flex items-center"
+                              onClick={() => setBlockJob(job)}
+                            >
+                              Block
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Reassign modal */}
+      <Modal open={!!reassignJob} onClose={() => setReassignJob(null)} title={`Reassign ${reassignJob?.ref}`}>
+        {reassignJob && (
+          <div className="flex flex-col gap-4">
+            <div className="p-3 rounded-lg bg-ink-50 text-sm">
+              <p className="text-ink-500 text-xs">Currently assigned to</p>
+              <p className="font-semibold text-ink-900">{reassignJob.assignedTo?.name ?? "Unassigned"}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {workers.map(w => (
+                <label
+                  key={w.id}
+                  className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedWorker === w.id ? "border-brand-orange bg-brand-orange/5" : "border-ink-200 hover:border-ink-300"
+                  }`}
+                  onClick={() => setSelectedWorker(w.id)}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all ${
+                    selectedWorker === w.id ? "border-brand-orange bg-brand-orange" : "border-ink-300"
+                  }`} />
+                  <div className="flex-1">
+                    <p className="font-semibold text-ink-900">{w.name}</p>
+                    <p className="text-xs text-ink-500">{w.activeJobs} active job{w.activeJobs !== 1 ? "s" : ""}</p>
+                  </div>
+                  <span className={`badge ${LOAD_BADGE[w.load]}`}>{w.load} load</span>
+                </label>
+              ))}
+            </div>
+            <button className="btn-primary w-full" disabled={!selectedWorker} onClick={handleReassign}>
+              Reassign Job
+            </button>
+          </div>
+        )}
+      </Modal>
+
+      <BlockJobSheet
+        open={!!blockJob} onClose={() => setBlockJob(null)}
+        jobRef={blockJob?.ref ?? ""} onSubmit={handleBlock}
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW 3 — ADMIN / MANAGER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type AdminTab = "Purchase Alerts" | "PO Tracker";
+
+const PO_STATUS_BADGE: Record<POStatus, string> = {
+  "Draft": "badge-neutral", "Ordered": "badge-info",
+  "Partial": "badge-warning", "Received": "badge-success",
+};
+
+function AdminView() {
+  const [tab, setTab] = useState<AdminTab>("Purchase Alerts");
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [pos, setPOs] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [poFilter, setPOFilter] = useState<"All" | POStatus>("All");
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [j, p] = await Promise.all([api.get<Job[]>("/jobs"), api.get<PurchaseOrder[]>("/purchase-orders")]);
+        setJobs(j); setPOs(p);
+      } catch {
+        setJobs(MOCK_JOBS); setPOs(MOCK_POS);
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const shortageJobs = jobs.filter(j => j.status === "Waiting Material" || j.status === "Blocked");
+  const filteredPOs  = poFilter === "All" ? pos : pos.filter(p => p.status === poFilter);
+
+  const handleCreatePO = async (jobId: string, materialId: string) => {
+    try {
+      const po = await api.post<PurchaseOrder>("/purchase-orders", { job_id: jobId, material_id: materialId });
+      setPOs(prev => [po, ...prev]);
+    } catch { /* toast in production */ }
+  };
+
+  const handleReceivePO = async (po: PurchaseOrder) => {
+    const items = po.items.map((item, i) => ({
+      material: item.material,
+      qty_received: receiveQtys[`${po.id}-${i}`] ?? item.qty,
+    }));
+    try {
+      await api.patch(`/purchase-orders/${po.id}/receive`, { items });
+      setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "Received" as POStatus } : p));
+    } catch { /* handle error */ }
+    setReceivingId(null);
+  };
+
+  return (
+    <div className="page pb-nav">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Purchasing</h1>
+          <p className="page-subtitle">Material alerts and purchase orders</p>
+        </div>
+      </div>
+
+      <div className="tabs mb-5">
+        {(["Purchase Alerts", "PO Tracker"] as AdminTab[]).map(t => (
+          <button key={t} className={`tab ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
+            {t}
+            {t === "Purchase Alerts" && shortageJobs.length > 0 && (
+              <span className="ml-1 w-5 h-5 rounded-full bg-danger text-white text-[10px] font-bold inline-flex items-center justify-center">
+                {shortageJobs.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* Jobs List */}
-      {loading ? (
-        <div className="text-center py-8 text-gray-600">Loading jobs...</div>
-      ) : visibleJobs.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">No jobs found</div>
-      ) : (
-        <div className="space-y-3">
-          {visibleJobs.map((job) => (
-            <button
-              key={job.id}
-              onClick={() => setSelectedJob(job)}
-              className="w-full text-left bg-white rounded-lg p-4 border border-gray-200 hover:border-orange-300 hover:bg-orange-50 transition-all"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="font-semibold text-gray-900">{job.projectName || job.client}</h3>
-                  <p className="page-subtitle">{job.client}</p>
-                </div>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[job.status] || "bg-gray-100"}`}>
-                  {job.status}
-                </span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-orange-500 h-2 rounded-full"
-                      style={{ width: `${job.completionPct}%` }}
-                    ></div>
+      {loading ? <div className="skeleton h-48 rounded-card" /> : tab === "Purchase Alerts" ? (
+
+        /* Purchase Alerts */
+        <div className="flex flex-col gap-4">
+          {shortageJobs.length === 0 ? (
+            <div className="empty mt-6">
+              <p className="empty-title">All clear</p>
+              <p className="empty-body">No material shortages right now.</p>
+            </div>
+          ) : shortageJobs.map(job => {
+            const shortage = job.bom.filter(b => b.status === "shortage");
+            const tier     = job.status === "Blocked" ? "URGENT" : "WARNING";
+            return (
+              <div key={job.id} className={`card p-4 border-l-4 ${tier === "URGENT" ? "border-l-danger" : "border-l-warning"}`}>
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`badge ${tier === "URGENT" ? "badge-danger" : "badge-warning"}`}>{tier}</span>
+                    <span className="ref">{job.ref}</span>
                   </div>
+                  <span className={`badge ${STATUS_BADGE[job.status]}`}>{job.status}</span>
                 </div>
-                <span className="text-sm font-medium text-gray-700">{job.completionPct}%</span>
+                <p className="font-semibold text-ink-900 mb-2">{job.client} — {job.description}</p>
+                {shortage.map(item => (
+                  <div key={item.id} className="flex items-start gap-2 p-2.5 rounded-lg bg-ink-50 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-danger mt-1.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-ink-800">{item.material}</p>
+                      <p className="text-xs text-ink-500">
+                        Short {item.shortageQty} {item.unit}
+                        {item.poRef && ` · ${item.poRef}`}
+                        {item.eta && ` · ETA ${item.eta}`}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {!job.bom.some(b => b.poRef) && (
+                  <button className="btn-primary btn-sm mt-1" onClick={() => handleCreatePO(job.id, shortage[0]?.id ?? "")}>
+                    Create PO
+                  </button>
+                )}
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
-      )}
-    </div>
-  );
-}
 
+      ) : (
 
-/* ------------------------------------------------------------------ */
-/*  Track progress bar component                                       */
-/* ------------------------------------------------------------------ */
-function TrackBar({
-  label,
-  stage,
-  progress,
-  stages,
-  color,
-  canAdvance,
-  onAdvance,
-  advancing,
-}: {
-  label: string;
-  stage: string;
-  progress: number;
-  stages: string[];
-  color: string; // tailwind color prefix like "orange" or "green"
-  canAdvance: boolean;
-  onAdvance: (newStage: string) => void;
-  advancing: boolean;
-}) {
-  const currentIdx = stages.indexOf(stage);
-  const barColor = progress >= 100 ? "bg-green-500" : `bg-${color}-500`;
-  const dotColor = progress >= 100 ? "bg-green-500" : `bg-${color}-500`;
-
-  return (
-    <div className="py-3 border-t border-gray-100 first:border-t-0 first:pt-0">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-          <span className="text-sm font-semibold text-gray-900">{label}</span>
-          <span className="text-xs text-gray-500">{stage}</span>
-        </div>
-        <span className="text-sm font-bold tabular-nums text-gray-700">{progress}%</span>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${progress >= 100 ? "bg-green-500" : "bg-orange-500"}`}
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      {/* Stage pills */}
-      <div className="flex gap-1 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-        {stages.map((s, i) => {
-          const done = i < currentIdx || (i === currentIdx && progress >= 100);
-          const current = i === currentIdx && progress < 100;
-          return (
-            <span
-              key={s}
-              className={`whitespace-nowrap px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                done
-                  ? "bg-green-50 border-green-200 text-green-700"
-                  : current
-                  ? "bg-orange-50 border-orange-200 text-orange-700"
-                  : "bg-gray-50 border-gray-200 text-gray-400"
-              }`}
-            >
-              {s}
-            </span>
-          );
-        })}
-      </div>
-
-      {/* Advance control */}
-      {canAdvance && currentIdx < stages.length - 1 && (
-        <div className="mt-2 flex items-center gap-2">
-          <select
-            defaultValue=""
-            onChange={(e) => { if (e.target.value) onAdvance(e.target.value); }}
-            disabled={advancing}
-            className="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-700"
-          >
-            <option value="" disabled>Advance stage...</option>
-            {stages.slice(currentIdx + 1).map((s) => (
-              <option key={s} value={s}>{s}</option>
+        /* PO Tracker */
+        <div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {(["All", "Draft", "Ordered", "Partial", "Received"] as const).map(s => (
+              <button
+                key={s}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  poFilter === s ? "bg-ink-900 text-white border-ink-900" : "border-ink-300 text-ink-600 hover:border-ink-400"
+                }`}
+                onClick={() => setPOFilter(s)}
+              >
+                {s}
+              </button>
             ))}
-          </select>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {filteredPOs.length === 0 ? (
+              <div className="empty mt-4"><p className="empty-title">No purchase orders</p></div>
+            ) : filteredPOs.map(po => (
+              <div key={po.id} className="card">
+                <div className="card-header">
+                  <div className="flex items-center gap-2">
+                    <span className="ref">{po.ref}</span>
+                    <span className={`badge ${PO_STATUS_BADGE[po.status]}`}>{po.status}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-ink-500">
+                    <span>{po.supplier}</span>
+                    <span className="ref text-ink-500">{po.jobRef}</span>
+                  </div>
+                </div>
+                <div className="p-4">
+                  {po.items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 text-sm border-b border-ink-100 last:border-0">
+                      <span className="text-ink-700">{item.material}</span>
+                      <span className="text-ink-500 tabular">{item.received}/{item.qty} {item.unit}</span>
+                    </div>
+                  ))}
+                  {po.eta && <p className="text-xs text-ink-500 mt-3">ETA: {po.eta}</p>}
+                  {po.shortageNote && <p className="text-xs text-success-dark mt-1">{po.shortageNote}</p>}
+
+                  {(po.status === "Ordered" || po.status === "Partial") && (
+                    receivingId === po.id ? (
+                      <div className="mt-4 flex flex-col gap-3">
+                        <p className="eyebrow">Mark received</p>
+                        {po.items.map((item, i) => (
+                          <div key={i} className="field">
+                            <label className="label">{item.material}</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number" className="input"
+                                placeholder={`of ${item.qty} ${item.unit}`}
+                                value={receiveQtys[`${po.id}-${i}`] ?? ""}
+                                onChange={e => setReceiveQtys(prev => ({ ...prev, [`${po.id}-${i}`]: Number(e.target.value) }))}
+                              />
+                              <span className="text-sm text-ink-500 whitespace-nowrap">{item.unit}</span>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex gap-2 mt-1">
+                          <button className="btn-primary flex-1" onClick={() => handleReceivePO(po)}>Confirm Received</button>
+                          <button className="btn-secondary" onClick={() => setReceivingId(null)}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button className="btn-secondary btn-sm mt-3" onClick={() => setReceivingId(po.id)}>
+                        Mark as Received
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
-/* ------------------------------------------------------------------ */
-/*  Job detail view                                                     */
-/* ------------------------------------------------------------------ */
-function JobDetail({
-  job,
-  onBack,
-  onUpdated,
-  onDeleted,
-}: {
-  job: Job;
-  onBack: () => void;
-  onUpdated: (job: Job) => void;
-  onDeleted: (id: string) => void;
-}) {
+export default function JobsPage() {
   const { user } = useAuth();
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    client: job.client,
-    projectName: job.projectName,
-    siteAddress: job.siteAddress,
-    dueDate: job.dueDate,
-    priority: job.priority,
-    status: job.status,
-    notes: job.notes,
-  });
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Slice 7b — delete
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  // Slice 9b — stage advance
-  const [advancing, setAdvancing] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const updated = await api.patch<Job>(`/jobs/${job.id}`, form);
-      onUpdated(updated);
-      setEditing(false);
-    } catch (err) {
-      setSaveError("Couldn't save these changes — they were not recorded. Check your connection and try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async () => {
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await api.delete(`/jobs/${job.id}`);
-      onDeleted(job.id);
-    } catch (err) {
-      setDeleteError("Couldn't delete — try again.");
-      setDeleting(false);
-    }
-  };
-
-  const advanceProduction = async (stage: string) => {
-    setAdvancing(true);
-    try {
-      const updated = await api.patch<Job>(`/jobs/${job.id}/production-stage`, { stage });
-      onUpdated(updated);
-    } catch (err) {
-      // silent — dropdown resets
-    } finally {
-      setAdvancing(false);
-    }
-  };
-
-  const advanceInstall = async (stage: string) => {
-    setAdvancing(true);
-    try {
-      const updated = await api.patch<Job>(`/jobs/${job.id}/install-stage`, { stage });
-      onUpdated(updated);
-    } catch (err) {
-      // silent
-    } finally {
-      setAdvancing(false);
-    }
-  };
-
-  const canAdvanceProd = !!user && PROD_ROLES.has(user.role);
-  const canAdvanceInstall = !!user && INSTALL_ROLES.has(user.role);
-
-  return (
-    <div className="page space-y-4">
-      <div className="flex justify-between items-center">
-        <button onClick={onBack} className="text-orange-600 font-medium hover:underline">
-          ← Back to Jobs
-        </button>
-        <div className="flex items-center gap-2">
-          {!editing && !confirmDelete && (
-            <>
-              <button onClick={() => setEditing(true)} className="text-sm px-3 py-1.5 bg-orange-100 text-orange-800 rounded-lg font-medium">
-                Edit
-              </button>
-              <button onClick={() => setConfirmDelete(true)} className="text-sm px-3 py-1.5 border border-red-200 bg-red-50 text-red-700 rounded-lg font-medium">
-                Delete
-              </button>
-            </>
-          )}
-          {confirmDelete && (
-            <>
-              <button
-                onClick={remove}
-                disabled={deleting}
-                className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg font-medium disabled:bg-gray-400"
-              >
-                {deleting ? "Deleting..." : "Yes, delete"}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
-              >
-                Cancel
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {deleteError && <div className="text-sm text-red-600 font-medium">{deleteError}</div>}
-
-      {/* Edit form */}
-      {editing ? (
-        <div className="bg-white rounded-lg p-6 border border-gray-200 space-y-3">
-          <input
-            type="text"
-            value={form.client}
-            onChange={(e) => setForm({ ...form, client: e.target.value })}
-            placeholder="Client"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold"
-          />
-          <input
-            type="text"
-            value={form.projectName}
-            onChange={(e) => setForm({ ...form, projectName: e.target.value })}
-            placeholder="Project name"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <input
-            type="text"
-            value={form.siteAddress}
-            onChange={(e) => setForm({ ...form, siteAddress: e.target.value })}
-            placeholder="Site address"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-gray-500">Status</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Priority</label>
-              <select
-                value={form.priority}
-                onChange={(e) => setForm({ ...form, priority: e.target.value as Job["priority"] })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Due date</label>
-              <input
-                type="date"
-                value={form.dueDate || ""}
-                onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-          </div>
-          <textarea
-            value={form.notes || ""}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="Notes"
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
-          />
-          {saveError && <div className="alert-danger">{saveError}</div>}
-          <div className="flex gap-2">
-            <button
-              onClick={() => { setEditing(false); setSaveError(null); }}
-              className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="flex-1 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* Read-only header */}
-          <div className="bg-white rounded-lg p-6 border border-gray-200">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">{job.projectName || job.client}</h1>
-            <p className="text-gray-600 mb-4">{job.client}</p>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
-                <div className="page-subtitle">Status</div>
-                <div className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${statusColors[job.status] || "bg-gray-100"}`}>
-                  {job.status}
-                </div>
-              </div>
-              <div>
-                <div className="page-subtitle">Priority</div>
-                <div className="font-semibold text-gray-900 mt-1">{job.priority}</div>
-              </div>
-              <div>
-                <div className="page-subtitle">Due Date</div>
-                <div className="font-semibold text-gray-900 mt-1">{job.dueDate || "N/A"}</div>
-              </div>
-              <div>
-                <div className="page-subtitle">Overall</div>
-                <div className="mt-1">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full ${job.completionPct >= 100 ? "bg-green-500" : "bg-orange-500"}`}
-                      style={{ width: `${job.completionPct}%` }}
-                    ></div>
-                  </div>
-                  <div className="text-sm font-semibold text-gray-900 mt-1">{job.completionPct}%</div>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Address</h3>
-              <p className="text-gray-700">{job.siteAddress || "N/A"}</p>
-            </div>
-
-            <div className="mt-4">
-              <h3 className="font-semibold text-gray-900 mb-2">Notes</h3>
-              <p className="text-gray-700">{job.notes || "No notes"}</p>
-            </div>
-          </div>
-
-          {/* Slice 9b — Three progress tracks */}
-          <div className="bg-white rounded-lg p-4 border border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Progress tracks</h3>
-              <span className="text-xs text-gray-400">Weighted: Design 20% / Production 60% / Install 20%</span>
-            </div>
-
-            <TrackBar
-              label="Design"
-              stage={job.designStage || "Job Assigned"}
-              progress={job.designProgress || 0}
-              stages={[
-                "Job Assigned", "Design Brief Received", "Site Measure Received",
-                "Site Measure Reviewed", "Concept Design Started", "Concept Design Completed",
-                "Client Review", "Revisions in Progress", "Client Approval Received",
-                "Working Drawings Completed", "Cabinet Vision Completed",
-                "Technical Review Completed", "Final Review", "Released to Production",
-              ]}
-              color="orange"
-              canAdvance={false}
-              onAdvance={() => {}}
-              advancing={false}
-            />
-
-            <TrackBar
-              label="Production"
-              stage={job.productionStage || "Not Started"}
-              progress={job.productionProgress || 0}
-              stages={PROD_STAGES}
-              color="orange"
-              canAdvance={canAdvanceProd}
-              onAdvance={advanceProduction}
-              advancing={advancing}
-            />
-
-            <TrackBar
-              label="Install"
-              stage={job.installStage || "Not Started"}
-              progress={job.installProgress || 0}
-              stages={INSTALL_STAGES}
-              color="orange"
-              canAdvance={canAdvanceInstall}
-              onAdvance={advanceInstall}
-              advancing={advancing}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
+  if (!user) return null;
+  if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
+  if (user.role === "supervisor")      return <SupervisorView />;
+  return <AdminView />;
 }
