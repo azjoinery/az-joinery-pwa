@@ -117,7 +117,7 @@ function groupByDate(tasks: Task[]): { label: string; tasks: Task[] }[] {
     }
     if (!t.dueDate) {
       noDate.push(t);
-    } else if (fe === "Overdue" || (isPast(t.dueDate) && fe !== "Done")) {
+    } else if (fe === "Overdue" || isPast(t.dueDate)) {
       overdue.push(t);
     } else if (isToday(t.dueDate)) {
       today.push(t);
