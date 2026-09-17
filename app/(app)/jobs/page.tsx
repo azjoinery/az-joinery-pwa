@@ -24,8 +24,8 @@
 
 import { useState, useEffect } from "react";
 import { format, isPast, parseISO } from "date-fns";
-import { useAuth } from "@/lib/useAuth";
-import api from "@/lib/api/client";
+import { useAuth } from "@/lib/store/auth";
+import { api } from "@/lib/api/client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
