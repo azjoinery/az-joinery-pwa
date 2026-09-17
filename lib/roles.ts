@@ -108,10 +108,10 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   drafter: ["design"],
  
   // Floor workers — daily production log + their own tasks + Log history.
-  cabinet_maker: ["dashboard", "tasks", "log"],
-  installer: ["dashboard", "tasks", "log"],
-  employee: ["dashboard", "tasks", "log"],
-  contractor: ["dashboard", "tasks", "log"],
+  cabinet_maker: ["dashboard", "tasks", "log", "jobs"],
+  installer: ["dashboard", "tasks", "log", "jobs"],
+  employee: ["dashboard", "tasks", "log", "jobs"],
+  contractor: ["dashboard", "tasks", "log", "jobs"],
 };
  
 const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];
