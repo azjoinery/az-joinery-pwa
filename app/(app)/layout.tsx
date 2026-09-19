@@ -1,4 +1,4 @@
-"use client";
+  "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -15,6 +15,7 @@ import NotificationBell from "@/lib/components/NotificationBell";
 import Icon from "@/lib/components/Icon";
 import { BrandLockup, LogoFull, LogoMark } from "@/lib/components/Brand";
 import InstallPrompt from "@/lib/components/InstallPrompt";
+import { PushSetup } from "@/lib/usePushNotifications";
 
 /**
  * App shell.
@@ -96,6 +97,9 @@ export default function ProtectedLayout({
 
   return (
     <div className="min-h-screen bg-ink-50">
+      {/* Registers this logged-in user for push notifications. Renders nothing. */}
+      <PushSetup />
+
       {/* ================= DESKTOP SIDEBAR ================= */}
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden w-rail flex-col bg-ink-950 lg:flex"
