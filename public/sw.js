@@ -9,10 +9,10 @@
  *
  * Bump CACHE_VERSION after a deploy if you need a full cache clear.
  */
- 
+
 const CACHE_VERSION = 1;
 const CACHE_NAME = "azj-v" + CACHE_VERSION;
- 
+
 /** Files to cache on first install — the bare minimum for an app shell. */
 var PRECACHE = [
   "/manifest.json",
@@ -22,7 +22,7 @@ var PRECACHE = [
   "/brand/icon-512.png",
   "/brand/logo-mark.webp",
 ];
- 
+
 /* ── Inline offline page ─────────────────────────────────────────────
    Embedded here so we don't need a separate HTML file in /public.    */
 var OFFLINE_PAGE = [
@@ -54,7 +54,7 @@ var OFFLINE_PAGE = [
   '<button onclick="location.reload()">Retry</button>',
   "</div></body></html>",
 ].join("");
- 
+
 // ── Install ──────────────────────────────────────────────────────────
 self.addEventListener("install", function (event) {
   event.waitUntil(
@@ -64,7 +64,7 @@ self.addEventListener("install", function (event) {
   );
   self.skipWaiting();
 });
- 
+
 // ── Activate — clean up old cache versions ───────────────────────────
 self.addEventListener("activate", function (event) {
   event.waitUntil(
@@ -82,14 +82,14 @@ self.addEventListener("activate", function (event) {
   );
   self.clients.claim();
 });
- 
+
 // ── Fetch ────────────────────────────────────────────────────────────
 self.addEventListener("fetch", function (event) {
   var request = event.request;
   if (request.method !== "GET") return;
- 
+
   var url = new URL(request.url);
- 
+
   // ── Cross-origin: only cache Google Fonts ──────────────────────────
   if (url.origin !== self.location.origin) {
     if (
@@ -101,13 +101,13 @@ self.addEventListener("fetch", function (event) {
     // All other cross-origin (API calls, etc.) — let the browser handle.
     return;
   }
- 
+
   // ── Next.js static chunks — immutable, cache-first ─────────────────
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request));
     return;
   }
- 
+
   // ── Brand assets & icons — rarely change, cache-first ──────────────
   if (
     url.pathname.startsWith("/brand/") ||
@@ -117,7 +117,7 @@ self.addEventListener("fetch", function (event) {
     event.respondWith(cacheFirst(request));
     return;
   }
- 
+
   // ── HTML navigation — network-first with offline fallback ──────────
   if (request.mode === "navigate") {
     event.respondWith(
@@ -143,7 +143,7 @@ self.addEventListener("fetch", function (event) {
     );
     return;
   }
- 
+
   // ── Everything else — network-first, cache for next time ───────────
   event.respondWith(
     fetch(request)
@@ -161,7 +161,7 @@ self.addEventListener("fetch", function (event) {
       })
   );
 });
- 
+
 // ── Helper: cache-first strategy ─────────────────────────────────────
 function cacheFirst(request) {
   return caches.match(request).then(function (cached) {
@@ -177,4 +177,68 @@ function cacheFirst(request) {
     });
   });
 }
- 
+
+// ── Push Notifications ────────────────────────────────────────────────
+//
+// The backend sends a push payload like:
+//   {
+//     "title": "AZJ-0893 — Ready to start",
+//     "body":  "All materials confirmed. Start Cutting now.",
+//     "url":   "/jobs",
+//     "tag":   "job-ready-j3"
+//   }
+//
+// `tag` deduplicates: a second push with the same tag replaces the first.
+// `url` is where the user lands when they tap the notification.
+
+self.addEventListener("push", function (event) {
+  var data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "AZ Joinery", body: event.data ? event.data.text() : "" };
+  }
+
+  var title   = data.title || "AZ Joinery";
+  var options = {
+    body:             data.body  || "",
+    icon:             "/brand/icon-192.png",
+    badge:            "/brand/icon-192.png",
+    tag:              data.tag   || "az-joinery",
+    renotify:         !!data.tag,       // vibrate again even if same tag
+    requireInteraction: data.urgent || false,
+    data:             { url: data.url || "/jobs" },
+    // Vibration pattern: short bursts for urgency
+    vibrate:          data.urgent ? [200, 100, 200] : [100],
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ── Notification click — open the app to the right page ──────────────
+
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+
+  var targetUrl = (event.notification.data && event.notification.data.url)
+    ? event.notification.data.url
+    : "/jobs";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (windowClients) {
+      // If the app is already open, focus it and navigate
+      for (var i = 0; i < windowClients.length; i++) {
+        var client = windowClients[i];
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.focus();
+          client.navigate(targetUrl);
+          return;
+        }
+      }
+      // Otherwise open a new window
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
