@@ -61,6 +61,9 @@ interface PurchaseOrder {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
+const JOB_MANAGE_ROLES = new Set([
+  "managing_director", "manager", "department_manager", "admin", "supervisor",
+]);
 
 const STATUS_BADGE: Record<JobStatus, string> = {
   "Ready":            "badge-success",
@@ -1167,6 +1170,8 @@ export default function JobsPage() {
   const { user } = useAuth();
   if (!user) return null;
   if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
+   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
+}
   if (user.role === "supervisor")      return <JobsKanban />;
   return <AdminView />;
 }
