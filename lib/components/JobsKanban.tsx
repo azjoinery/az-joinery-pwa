@@ -17,6 +17,9 @@ interface RawJob {
   jobNum?: string | number;
   client?: string;
   projectName?: string;
+  phone?: string;
+  siteAddress?: string;
+  notes?: string;
   status?: string;
   currentStatus?: string;
   priority?: string;
@@ -41,6 +44,9 @@ interface BoardJob {
   ref: string;
   client: string;
   project: string;
+  phone: string;
+  siteAddress: string;
+  notes: string;
   priority: Priority;
   assignedTo?: { id: string; name: string };
   dueDate?: string;
@@ -49,6 +55,16 @@ interface BoardJob {
   blocked: boolean;
   blockedReason?: string;
   completed: boolean;
+}
+
+interface EditJobForm {
+  client: string;
+  projectName: string;
+  phone: string;
+  siteAddress: string;
+  dueDate: string;
+  priority: Priority;
+  notes: string;
 }
 
 const DEFAULT_STAGES: StageDefinition[] = [
@@ -60,7 +76,7 @@ const DEFAULT_STAGES: StageDefinition[] = [
   { name: "QA Passed", pct: 100 },
 ];
 
-const ASSIGNABLE_ROLES = new Set(["cabinet_maker", "employee", "contractor", "installer"]);
+const ASSIGNABLE_ROLES = new Set(["cabinet_maker", "employee", "contractor", "installer", "supervisor"]);
 
 function normalisePriority(value?: string): Priority {
   if (value === "High") return "High";
@@ -85,6 +101,9 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     ref: rawRef.toUpperCase().startsWith("AZJ-") ? rawRef : `AZJ-${rawRef}`,
     client: raw.client || "Unassigned client",
     project: raw.projectName || "Production job",
+    phone: raw.phone || "",
+    siteAddress: raw.siteAddress || "",
+    notes: raw.notes || "",
     priority: normalisePriority(raw.priority),
     assignedTo: assignedWorker?.name
       ? { id: assignedWorker.id, name: assignedWorker.name }
@@ -129,7 +148,7 @@ function Modal({ title, onClose, children }: {
   );
 }
 
-export default function JobsKanban() {
+export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [jobs, setJobs] = useState<BoardJob[]>([]);
   const [workers, setWorkers] = useState<RawWorker[]>([]);
   const [stages, setStages] = useState<StageDefinition[]>(DEFAULT_STAGES);
@@ -147,6 +166,11 @@ export default function JobsKanban() {
   const [blockingJob, setBlockingJob] = useState<BoardJob | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
+  const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
+  const [editForm, setEditForm] = useState<EditJobForm>({
+    client: "", projectName: "", phone: "", siteAddress: "",
+    dueDate: "", priority: "Normal", notes: "",
+  });
 
   useEffect(() => {
     (async () => {
@@ -155,7 +179,7 @@ export default function JobsKanban() {
       try {
         const [rawJobs, rawWorkers] = await Promise.all([
           api.get<RawJob[]>("/jobs"),
-          api.get<RawWorker[]>("/users"),
+          canManage ? api.get<RawWorker[]>("/users") : Promise.resolve([] as RawWorker[]),
         ]);
 
         let productionStages = DEFAULT_STAGES;
@@ -178,7 +202,7 @@ export default function JobsKanban() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [canManage]);
 
   const filteredJobs = jobs.filter(job => {
     const search = query.trim().toLowerCase();
@@ -197,7 +221,7 @@ export default function JobsKanban() {
   };
 
   const moveJob = async (job: BoardJob, stageName: string) => {
-    if (job.blocked || job.stage === stageName || savingId) return;
+    if (!canManage || job.blocked || job.stage === stageName || savingId) return;
     const stage = stages.find(item => item.name === stageName);
     if (!stage) return;
     const previous = job;
@@ -217,7 +241,7 @@ export default function JobsKanban() {
   };
 
   const saveAssignment = async () => {
-    if (!assigningJob || !selectedWorkerId) return;
+    if (!canManage || !assigningJob || !selectedWorkerId) return;
     const worker = workers.find(item => item.id === selectedWorkerId);
     if (!worker?.name) return;
     setSavingId(assigningJob.id);
@@ -237,7 +261,7 @@ export default function JobsKanban() {
   };
 
   const saveBlock = async () => {
-    if (!blockingJob || !blockReason) return;
+    if (!canManage || !blockingJob || !blockReason) return;
     const reason = [blockReason, blockDetail.trim()].filter(Boolean).join(" — ");
     setSavingId(blockingJob.id);
     setError("");
@@ -263,6 +287,7 @@ export default function JobsKanban() {
   };
 
   const unblockJob = async (job: BoardJob) => {
+    if (!canManage) return;
     const nextStatus = job.progress > 0 ? "In Production" : "Ready for Production";
     setSavingId(job.id);
     setError("");
@@ -285,8 +310,58 @@ export default function JobsKanban() {
   };
 
   const openAssignment = (job: BoardJob) => {
+    if (!canManage) return;
     setAssigningJob(job);
     setSelectedWorkerId(job.assignedTo?.id || "");
+  };
+
+  const openEdit = (job: BoardJob) => {
+    if (!canManage) return;
+    setEditingJob(job);
+    setEditForm({
+      client: job.client,
+      projectName: job.project === "Production job" ? "" : job.project,
+      phone: job.phone,
+      siteAddress: job.siteAddress,
+      dueDate: job.dueDate?.slice(0, 10) || "",
+      priority: job.priority,
+      notes: job.notes,
+    });
+  };
+
+  const saveEdit = async () => {
+    if (!canManage || !editingJob || !editForm.client.trim()) return;
+    setSavingId(editingJob.id);
+    setError("");
+    try {
+      await api.patch(`/jobs/${editingJob.id}`, {
+        client: editForm.client.trim(),
+        projectName: editForm.projectName.trim(),
+        phone: editForm.phone.trim(),
+        siteAddress: editForm.siteAddress.trim(),
+        dueDate: editForm.dueDate,
+        priority: editForm.priority === "Normal" ? "Medium" : editForm.priority,
+        notes: editForm.notes.trim(),
+      });
+      setJobs(current => current.map(job => job.id === editingJob.id
+        ? {
+            ...job,
+            client: editForm.client.trim(),
+            project: editForm.projectName.trim() || "Production job",
+            phone: editForm.phone.trim(),
+            siteAddress: editForm.siteAddress.trim(),
+            dueDate: editForm.dueDate || undefined,
+            priority: editForm.priority,
+            notes: editForm.notes.trim(),
+          }
+        : job
+      ));
+      setEditingJob(null);
+    } catch {
+      setError(`Could not update ${editingJob.ref}. No change was saved.`);
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const jobCard = (job: BoardJob) => {
@@ -295,7 +370,7 @@ export default function JobsKanban() {
     return (
       <article
         key={job.id}
-        draggable={!job.blocked && !busy}
+        draggable={canManage && !job.blocked && !busy}
         onDragStart={event => {
           event.dataTransfer.setData("text/job-id", job.id);
           event.dataTransfer.effectAllowed = "move";
@@ -332,19 +407,22 @@ export default function JobsKanban() {
         </div>
         <p className="mt-1 text-right text-[10px] font-medium text-ink-400">{job.progress}% production</p>
 
-        <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">Move to stage</label>
-        <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
+        <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">{canManage ? "Move to stage" : "Current stage"}</label>
+        <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={!canManage || job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
           {stages.map(stage => <option key={stage.name} value={stage.name}>{stage.name}</option>)}
         </select>
 
-        <div className="mt-2 flex gap-2">
-          <button className="btn-secondary btn-sm flex-1" disabled={busy} onClick={() => openAssignment(job)}>Assign</button>
-          {job.blocked ? (
-            <button className="btn-sm border border-success/40 text-success-dark hover:bg-success-light" disabled={busy} onClick={() => unblockJob(job)}>Unblock</button>
-          ) : !job.completed ? (
-            <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" disabled={busy} onClick={() => setBlockingJob(job)}>Block</button>
-          ) : null}
-        </div>
+        {canManage && (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openAssignment(job)}>Assign</button>
+            <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openEdit(job)}>Edit</button>
+            {job.blocked ? (
+              <button className="btn-sm border border-success/40 text-success-dark hover:bg-success-light" disabled={busy} onClick={() => unblockJob(job)}>Unblock</button>
+            ) : !job.completed ? (
+              <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" disabled={busy} onClick={() => setBlockingJob(job)}>Block</button>
+            ) : <span />}
+          </div>
+        )}
       </article>
     );
   };
@@ -375,6 +453,12 @@ export default function JobsKanban() {
           </div>
         ))}
       </div>
+
+      {!canManage && (
+        <div className="mb-4 rounded-xl border border-info/25 bg-info-light px-4 py-3 text-sm text-info-dark">
+          Read-only view — you can follow every job and use the filters, but only supervisors and management can move, assign, block, or edit jobs.
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger-light px-4 py-3 text-sm text-danger-dark">
@@ -458,7 +542,12 @@ export default function JobsKanban() {
                       <td>{job.assignedTo?.name || <span className="italic text-ink-400">Unassigned</span>}</td>
                       <td>{due?.label || "—"}</td>
                       <td><span className={`badge ${job.priority === "High" ? "badge-danger" : job.priority === "Low" ? "badge-neutral" : "badge-info"}`}>{job.priority}</span></td>
-                      <td><button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button></td>
+                      <td>{canManage && (
+                        <div className="flex gap-1.5">
+                          <button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button>
+                          <button className="btn-secondary btn-sm" onClick={() => openEdit(job)}>Edit</button>
+                        </div>
+                      )}</td>
                     </tr>
                   );
                 })}
@@ -468,7 +557,7 @@ export default function JobsKanban() {
         </div>
       )}
 
-      {assigningJob && (
+      {canManage && assigningJob && (
         <Modal title={`Assign ${assigningJob.ref}`} onClose={() => setAssigningJob(null)}>
           <div className="flex flex-col gap-2">
             {workers.map(worker => worker.name && (
@@ -485,7 +574,47 @@ export default function JobsKanban() {
         </Modal>
       )}
 
-      {blockingJob && (
+      {canManage && editingJob && (
+        <Modal title={`Edit ${editingJob.ref}`} onClose={() => setEditingJob(null)}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="label">Client *</label>
+              <input className="input" value={editForm.client} onChange={event => setEditForm(current => ({ ...current, client: event.target.value }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Project name</label>
+              <input className="input" value={editForm.projectName} onChange={event => setEditForm(current => ({ ...current, projectName: event.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input className="input" type="tel" value={editForm.phone} onChange={event => setEditForm(current => ({ ...current, phone: event.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Due date</label>
+              <input className="input" type="date" value={editForm.dueDate} onChange={event => setEditForm(current => ({ ...current, dueDate: event.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Priority</label>
+              <select className="input" value={editForm.priority} onChange={event => setEditForm(current => ({ ...current, priority: event.target.value as Priority }))}>
+                <option value="Low">Low</option>
+                <option value="Normal">Normal</option>
+                <option value="High">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Site address</label>
+              <input className="input" value={editForm.siteAddress} onChange={event => setEditForm(current => ({ ...current, siteAddress: event.target.value }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Notes</label>
+              <textarea className="input min-h-24 resize-y" value={editForm.notes} onChange={event => setEditForm(current => ({ ...current, notes: event.target.value }))} />
+            </div>
+          </div>
+          <button className="btn-primary mt-5 w-full" disabled={!editForm.client.trim() || savingId === editingJob.id} onClick={saveEdit}>Save job changes</button>
+        </Modal>
+      )}
+
+      {canManage && blockingJob && (
         <Modal title={`Block ${blockingJob.ref}`} onClose={() => setBlockingJob(null)}>
           <label className="label">Reason</label>
           <select className="input" value={blockReason} onChange={event => setBlockReason(event.target.value)}>
