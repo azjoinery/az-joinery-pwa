@@ -1167,6 +1167,6 @@ export default function JobsPage() {
   const { user } = useAuth();
   if (!user) return null;
   if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
-  if (user.role === "supervisor")      return <SupervisorView />;
+  if (user.role === "supervisor")      return <JobsKanban />;
   return <AdminView />;
 }
