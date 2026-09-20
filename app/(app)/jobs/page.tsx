@@ -1168,10 +1168,12 @@ function AdminView() {
 
 export default function JobsPage() {
   const { user } = useAuth();
+
   if (!user) return null;
-  if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
-   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
-}
-  if (user.role === "supervisor")      return <JobsKanban />;
-  return <AdminView />;
+
+  if (user.role === "installer") {
+    return <CabinetmakerView userId={user.id} />;
+  }
+
+  return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
 }
