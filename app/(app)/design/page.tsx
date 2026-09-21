@@ -203,15 +203,39 @@ function actionLabel(action: string): string {
 }
 
 export default function DesignWorkspace() {
+  const { user } = useAuth();
   const [jobs, setJobs] = useState<DesignJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<"board" | "list">("board");
+  const [designers, setDesigners] = useState<Employee[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [savingJobId, setSavingJobId] = useState<string | null>(null);
+
+  const canManageDesign = !!user && [
+    "managing_director", "manager", "department_manager", "admin", "office",
+  ].includes(user.role);
+  const canDeleteDesign = !!user && [
+    "managing_director", "manager", "admin",
+  ].includes(user.role);
 
   useEffect(() => {
     loadJobs();
+    if (canManageDesign) loadDesigners();
   }, []);
+
+  const loadDesigners = async () => {
+    try {
+      const data = await api.get<Employee[]>("/users/employees");
+      setDesigners((data || []).filter((person) =>
+        person.role === "drafter" || person.role === "designer"
+      ));
+    } catch {
+      setDesigners([]);
+    }
+  };
 
   const loadJobs = async () => {
     setJobsLoading(true);
@@ -227,6 +251,88 @@ export default function DesignWorkspace() {
   };
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId) || null;
+
+  const updateJobFromBoard = async (jobId: string, changes: Partial<DesignJob>) => {
+    setSavingJobId(jobId);
+    setActionError(null);
+    try {
+      const updated = await api.patch<DesignJob>(`/design/jobs/${jobId}`, changes);
+      setJobs((current) => current.map((job) => job.id === jobId ? { ...job, ...updated } : job));
+    } catch {
+      setActionError("Couldn't update this job. Nothing was changed.");
+    } finally {
+      setSavingJobId(null);
+    }
+  };
+
+  const deleteJobFromBoard = async (job: DesignJob) => {
+    if (!window.confirm(`Delete #${job.jobNum} — ${job.client}? This cannot be undone.`)) return;
+    setSavingJobId(job.id);
+    setActionError(null);
+    try {
+      await api.delete(`/jobs/${job.id}`);
+      setJobs((current) => current.filter((item) => item.id !== job.id));
+    } catch {
+      setActionError("Couldn't delete this job. Nothing was removed.");
+    } finally {
+      setSavingJobId(null);
+    }
+  };
+
+  const jobActions = (job: DesignJob) => (
+    <div className="mt-3 space-y-2 border-t border-gray-100 pt-2">
+      <button
+        type="button"
+        onClick={() => setSelectedJobId(job.id)}
+        className="w-full rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-800"
+      >
+        {canManageDesign ? "Open / Edit" : "Open"}
+      </button>
+
+      {canManageDesign && (
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            aria-label={`Assign designer for job ${job.jobNum}`}
+            value={job.assignedDesignerId || ""}
+            disabled={savingJobId === job.id}
+            onChange={(event) => updateJobFromBoard(job.id, { assignedDesignerId: event.target.value })}
+            className="min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-700"
+          >
+            <option value="">Assign</option>
+            {designers.map((designer) => (
+              <option key={designer.id} value={designer.id}>{designer.name}</option>
+            ))}
+          </select>
+
+          <select
+            aria-label={`Move job ${job.jobNum} to another stage`}
+            value={designColumnFor(job.designStage)}
+            disabled={savingJobId === job.id}
+            onChange={(event) => {
+              const column = DESIGN_BOARD_COLUMNS.find((item) => item.key === event.target.value);
+              if (column) updateJobFromBoard(job.id, { designStage: column.targetStage });
+            }}
+            className="min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-700"
+          >
+            {DESIGN_BOARD_COLUMNS.map((column) => (
+              <option key={column.key} value={column.key}>{column.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {canDeleteDesign && (
+        <button
+          type="button"
+          disabled={savingJobId === job.id}
+          onClick={() => deleteJobFromBoard(job)}
+          className="w-full rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+        >
+          Delete
+        </button>
+      )}
+    </div>
+  );
 
   // Slice 5c: search across job number, client, project, stage, designer.
   // Substring, case-insensitive. Empty query keeps everything.
@@ -248,6 +354,9 @@ export default function DesignWorkspace() {
 
         {jobsError && (
           <div className="alert-danger">{jobsError}</div>
+        )}
+        {actionError && (
+          <div className="alert-danger">{actionError}</div>
         )}
 
         {/* Slice 5c: search the design jobs list */}
@@ -275,6 +384,23 @@ export default function DesignWorkspace() {
           )}
         </div>
 
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setView("board")}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "board" ? "bg-orange-500 text-white" : "text-gray-600"}`}
+          >
+            Board
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "list" ? "bg-orange-500 text-white" : "text-gray-600"}`}
+          >
+            List
+          </button>
+        </div>
+
         {jobsLoading ? (
           <div className="text-center py-8 text-gray-600">Loading jobs...</div>
         ) : jobs.length === 0 ? (
@@ -285,7 +411,7 @@ export default function DesignWorkspace() {
           <div className="bg-white p-6 rounded-lg border border-gray-200 text-center text-gray-600">
             No design jobs match this search.
           </div>
-        ) : (
+        ) : view === "board" ? (
           <div className="overflow-x-auto pb-3">
             <div className="grid min-w-[1180px] grid-cols-5 gap-3">
               {DESIGN_BOARD_COLUMNS.map((column) => {
@@ -307,25 +433,26 @@ export default function DesignWorkspace() {
                         <p className="py-10 text-center text-xs text-gray-400">No jobs</p>
                       ) : (
                         columnJobs.map((job) => (
-                          <button
+                          <article
                             key={job.id}
-                            type="button"
-                            onClick={() => setSelectedJobId(job.id)}
                             className="w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-orange-300"
                           >
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="text-sm font-semibold text-gray-900">#{job.jobNum}</span>
-                              {job.blocked ? (
-                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Blocked</span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 truncate text-sm font-medium text-gray-800">{job.client}</p>
-                            <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{job.projectName}</p>
-                            <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
-                              <span className="truncate">{job.assignedDesignerName || "Unassigned"}</span>
-                              <span>{job.designProgress ?? 0}%</span>
-                            </div>
-                          </button>
+                            <button type="button" onClick={() => setSelectedJobId(job.id)} className="w-full text-left">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-sm font-semibold text-gray-900">#{job.jobNum}</span>
+                                {job.blocked ? (
+                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Blocked</span>
+                                ) : null}
+                              </div>
+                              <p className="mt-1 truncate text-sm font-medium text-gray-800">{job.client}</p>
+                              <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{job.projectName}</p>
+                              <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
+                                <span className="truncate">{job.assignedDesignerName || "Unassigned"}</span>
+                                <span>{job.designProgress ?? 0}%</span>
+                              </div>
+                            </button>
+                            {jobActions(job)}
+                          </article>
                         ))
                       )}
                     </div>
@@ -333,6 +460,29 @@ export default function DesignWorkspace() {
                 );
               })}
             </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {visibleJobs.map((job) => (
+              <article key={job.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                <button type="button" onClick={() => setSelectedJobId(job.id)} className="w-full text-left">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900">#{job.jobNum} — {job.client}</p>
+                      <p className="mt-1 truncate text-sm text-gray-500">{job.projectName}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700">
+                      {DESIGN_BOARD_COLUMNS.find((column) => column.key === designColumnFor(job.designStage))?.label}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                    <span>{job.assignedDesignerName || "Unassigned"}</span>
+                    <span>{job.designProgress ?? 0}%</span>
+                  </div>
+                </button>
+                {jobActions(job)}
+              </article>
+            ))}
           </div>
         )}
       </div>
