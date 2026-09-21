@@ -37,6 +37,7 @@ export type PageKey =
   | "dashboard"
   | "jobs"
   | "tasks"
+  | "materials"
   | "inventory"
   | "log"
   | "sales"
@@ -59,6 +60,7 @@ export const PAGES: Record<
   jobs:      { href: "/jobs",      label: "Jobs",      icon: "jobs",      group: "Workshop" },
   tasks:     { href: "/tasks",     label: "Tasks",     icon: "tasks",     group: "Workshop" },
   design:    { href: "/design",    label: "Design",    icon: "design",    group: "Workshop" },
+  materials: { href: "/materials", label: "Materials", icon: "inventory", group: "Workshop" },
   inventory: { href: "/inventory", label: "Inventory", icon: "inventory", group: "Workshop" },
   log:       { href: "/log",       label: "Log",       icon: "analytics", group: "Workshop" },
  
@@ -73,7 +75,7 @@ export const PAGES: Record<
  
 export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
  
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "inventory", "log", "sales", "analytics", "invoices", "design", "accounts"];
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "materials", "inventory", "log", "sales", "analytics", "invoices", "design", "accounts"];
  
 // Slice 8b — Trash lives in the Business group. It's added below to admin /
 // MD / manager (who can also permanent-delete) and supervisor (who can
@@ -98,20 +100,20 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
  
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
   // Log added so supervisor can review workshop activity history.
-  supervisor: ["dashboard", "jobs", "tasks", "inventory", "log", "trash"],
+  supervisor: ["dashboard", "jobs", "tasks",  "materials", "inventory", "log", "trash"],
  
   // Materials/purchasing-facing role. Log added so office can review
   // stock movements (receipts, consumption) as history.
-  office: ["inventory", "invoices", "accounts", "dashboard", "log"],
+  office: ["inventory", "materials", "invoices", "accounts", "dashboard", "log"],
  
   // Design module only — matches the original app (Design + Profile only).
   drafter: ["design"],
  
   // Floor workers — daily production log + their own tasks + Log history.
-  cabinet_maker: ["dashboard", "tasks", "log", "jobs"],
-  installer: ["dashboard", "tasks", "log", "jobs"],
-  employee: ["dashboard", "tasks", "log", "jobs"],
-  contractor: ["dashboard", "tasks", "log", "jobs"],
+  cabinet_maker: ["dashboard", "jobs", "tasks", "materials", "log"],
+  installer: ["dashboard", "jobs", "tasks", "materials", "log"],
+  employee: ["dashboard", "jobs", "tasks", "materials", "log"],
+  contractor: ["dashboard", "jobs", "tasks", "materials", "log"],
 };
  
 const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];
