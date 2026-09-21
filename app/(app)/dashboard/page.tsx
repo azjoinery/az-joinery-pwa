@@ -6,7 +6,6 @@ import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 import { DailyEntry, EntryMaterial, Job } from "@/lib/types";
 import Icon, { type IconName } from "@/lib/components/Icon";
-import MaterialAssignmentPanel from "@/lib/components/MaterialAssignmentPanel";
 
 // Roles that get the executive/management overview instead of the
 // floor-worker daily-log form. This mirrors the old app's split between
@@ -19,14 +18,13 @@ const EXECUTIVE_ROLES = new Set([
   "admin",
   "office",
 ]);
-const MATERIAL_ASSIGN_ROLES = new Set(["supervisor", "admin", "manager", "managing_director"]);
 
 export default function DashboardPage() {
   const { user } = useAuth();
   if (user && EXECUTIVE_ROLES.has(user.role)) {
-    return <ExecutiveOverview canAssignMaterials={MATERIAL_ASSIGN_ROLES.has(user.role)} />;
+    return <ExecutiveOverview />;
   }
-  return <FloorLogDashboard canAssignMaterials={Boolean(user && MATERIAL_ASSIGN_ROLES.has(user.role))} />;
+  return <FloorLogDashboard />;
 }
 
 /* ==========================================================================
@@ -141,7 +139,7 @@ interface Alert {
   tone: "red" | "amber";
 }
 
-function ExecutiveOverview({ canAssignMaterials }: { canAssignMaterials: boolean }) {
+function ExecutiveOverview() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -553,7 +551,7 @@ function pickDept(stk?: StockPick): "cnc" | "hardware" {
   return "cnc";
 }
 
-function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean }) {
+function FloorLogDashboard() {
   const { user } = useAuth();
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
