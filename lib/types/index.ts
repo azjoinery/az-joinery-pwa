@@ -87,6 +87,8 @@ export interface EntryMaterial {
 export interface DailyEntry {
   id: string;
   userId: string;
+  employeeId?: string;
+employeeName?: string;
   date: string;
   counts: Record<string, number>;
   note: string;
