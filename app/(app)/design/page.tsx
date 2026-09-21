@@ -112,6 +112,50 @@ const STAGES = [
   { name: "Released to Production", progress: 100 },
 ];
 
+const DESIGN_BOARD_COLUMNS = [
+  {
+    key: "brief",
+    label: "Brief",
+    targetStage: "Design Brief Received",
+    stages: ["Job Assigned", "Design Brief Received", "Site Measure Received"],
+  },
+  {
+    key: "draft",
+    label: "Draft",
+    targetStage: "Concept Design Started",
+    stages: ["Site Measure Reviewed", "Concept Design Started", "Concept Design Completed"],
+  },
+  {
+    key: "approval",
+    label: "Approval",
+    targetStage: "Client Review",
+    stages: ["Client Review", "Revisions in Progress", "Client Approval Received"],
+  },
+  {
+    key: "documents",
+    label: "Production Docs",
+    targetStage: "Working Drawings Completed",
+    stages: [
+      "Working Drawings Completed",
+      "Cabinet Vision Completed",
+      "Technical Review Completed",
+      "Production Documents Completed",
+    ],
+  },
+  {
+    key: "released",
+    label: "Released",
+    targetStage: "Released to Production",
+    stages: ["Released to Production"],
+  },
+] as const;
+
+function designColumnFor(stage?: string) {
+  return DESIGN_BOARD_COLUMNS.find((column) =>
+    column.stages.some((stageName) => stageName === (stage || "Job Assigned"))
+  )?.key || "brief";
+}
+
 const CHECKLIST_ITEMS = [
   "Site Dimensions Verified", "Ceiling Height Confirmed", "Floor Levels Checked",
   "Wall Conditions Checked", "Services Checked", "Appliances Checked",
@@ -158,7 +202,7 @@ function actionLabel(action: string): string {
   return action;
 }
 
-export default function DesignPage() {
+export default function DesignWorkspace() {
   const [jobs, setJobs] = useState<DesignJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState<string | null>(null);
@@ -199,8 +243,8 @@ export default function DesignPage() {
   if (!selectedJobId) {
     return (
       <div className="page space-y-4">
-        <h1 className="page-title">Design Workflow</h1>
-        <p className="page-subtitle">Select a job to view or update its design stage, checklist, and variations.</p>
+        <h1 className="page-title">Design Jobs</h1>
+        <p className="page-subtitle">Move each job from brief to production release.</p>
 
         {jobsError && (
           <div className="alert-danger">{jobsError}</div>
@@ -242,35 +286,53 @@ export default function DesignPage() {
             No design jobs match this search.
           </div>
         ) : (
-          <div className="space-y-2">
-            {visibleJobs.map((job) => (
-              <button
-                key={job.id}
-                onClick={() => setSelectedJobId(job.id)}
-                className="w-full text-left bg-white p-4 rounded-lg border border-gray-200 hover:border-orange-300"
-              >
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-semibold text-gray-900">#{job.jobNum} — {job.client}</span>
-                  {job.blocked && (
-                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">Blocked</span>
-                  )}
-                  {job.releaseStatus === "Released" && (
-                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Released</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-600 mb-2">{job.projectName}</p>
-                <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
-                  <span>{job.designStage || "Job Assigned"}</span>
-                  <span>{job.designProgress ?? 0}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full bg-orange-500"
-                    style={{ width: `${job.designProgress ?? 0}%` }}
-                  ></div>
-                </div>
-              </button>
-            ))}
+          <div className="overflow-x-auto pb-3">
+            <div className="grid min-w-[1180px] grid-cols-5 gap-3">
+              {DESIGN_BOARD_COLUMNS.map((column) => {
+                const columnJobs = visibleJobs.filter(
+                  (job) => designColumnFor(job.designStage) === column.key
+                );
+
+                return (
+                  <section key={column.key} className="min-h-[420px] rounded-xl border border-gray-200 bg-gray-50">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-3 py-3">
+                      <h2 className="text-sm font-semibold text-gray-900">{column.label}</h2>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-gray-600">
+                        {columnJobs.length}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 p-2">
+                      {columnJobs.length === 0 ? (
+                        <p className="py-10 text-center text-xs text-gray-400">No jobs</p>
+                      ) : (
+                        columnJobs.map((job) => (
+                          <button
+                            key={job.id}
+                            type="button"
+                            onClick={() => setSelectedJobId(job.id)}
+                            className="w-full rounded-lg border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-orange-300"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-semibold text-gray-900">#{job.jobNum}</span>
+                              {job.blocked ? (
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Blocked</span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 truncate text-sm font-medium text-gray-800">{job.client}</p>
+                            <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{job.projectName}</p>
+                            <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
+                              <span className="truncate">{job.assignedDesignerName || "Unassigned"}</span>
+                              <span>{job.designProgress ?? 0}%</span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -329,6 +391,7 @@ function JobDesignDetail({
   const [checklistLoading, setChecklistLoading] = useState(true);
   const [checklistError, setChecklistError] = useState<string | null>(null);
   const [savingItem, setSavingItem] = useState<string | null>(null);
+  const [showCompletedChecks, setShowCompletedChecks] = useState(false);
 
   const [variations, setVariations] = useState<Variation[]>([]);
   const [showVarForm, setShowVarForm] = useState(false);
@@ -663,7 +726,6 @@ function JobDesignDetail({
   const checklistDoneCount = checklistEntries.filter((c) => c.data.complete).length;
   const checklistProgress = Math.round((checklistDoneCount / checklistEntries.length) * 100);
 
-  const currentIndex = STAGES.findIndex((s) => s.name === currentJob.designStage);
   const sellExGst = varCost * (1 + varMarkup / 100);
   const gst = sellExGst * 0.1;
   const totalIncGst = sellExGst + gst;
@@ -728,13 +790,13 @@ function JobDesignDetail({
           onClick={() => setTab("stages")}
           className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "stages" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
         >
-          14 Stages
+          Workflow
         </button>
         <button
           onClick={() => setTab("checklist")}
           className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
         >
-          Checklist ({checklistDoneCount}/{checklistEntries.length})
+          Checks ({checklistEntries.length - checklistDoneCount} left)
         </button>
         <button
           onClick={() => setTab("variations")}
@@ -773,27 +835,24 @@ function JobDesignDetail({
           {stageError && (
             <div className="alert-danger">{stageError}</div>
           )}
-          {STAGES.map((stage, i) => (
+          {DESIGN_BOARD_COLUMNS.map((column, i) => (
             <button
-              key={stage.name}
-              onClick={() => setStage(stage.name)}
+              key={column.key}
+              onClick={() => setStage(column.targetStage)}
               disabled={savingStage}
               className={`w-full text-left bg-white p-3 rounded-lg border disabled:opacity-60 ${
-                stage.name === currentJob.designStage ? "border-orange-400 ring-1 ring-orange-300" : "border-gray-200"
+                designColumnFor(currentJob.designStage) === column.key ? "border-orange-400 ring-1 ring-orange-300" : "border-gray-200"
               }`}
             >
               <div className="flex justify-between mb-1">
                 <span className="font-medium text-sm text-gray-900">
-                  {i + 1}. {stage.name}
+                  {i + 1}. {column.label}
                 </span>
-                <span className="text-xs text-gray-600">{stage.progress}%</span>
+                {designColumnFor(currentJob.designStage) === column.key && (
+                  <span className="text-xs font-semibold text-orange-600">Current</span>
+                )}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full ${i <= currentIndex ? "bg-orange-500" : "bg-gray-200"}`}
-                  style={{ width: `${stage.progress}%` }}
-                ></div>
-              </div>
+              <p className="text-xs text-gray-500">{column.stages.join(" · ")}</p>
             </button>
           ))}
         </div>
@@ -807,10 +866,23 @@ function JobDesignDetail({
           <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
             <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${checklistProgress}%` }}></div>
           </div>
+          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Release checks</p>
+              <p className="text-xs text-gray-500">{checklistDoneCount} complete · {checklistEntries.length - checklistDoneCount} remaining</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCompletedChecks((value) => !value)}
+              className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700"
+            >
+              {showCompletedChecks ? "Hide completed" : "Show completed"}
+            </button>
+          </div>
           {checklistLoading ? (
             <div className="text-center py-8 text-gray-600">Loading checklist...</div>
           ) : (
-            checklistEntries.map((item) => (
+            checklistEntries.filter((item) => showCompletedChecks || !item.data.complete).map((item) => (
               <button
                 key={item.name}
                 onClick={() => toggleChecklistItem(item.name)}
