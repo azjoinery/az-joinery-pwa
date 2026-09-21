@@ -104,10 +104,10 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
  
   // Materials/purchasing-facing role. Log added so office can review
   // stock movements (receipts, consumption) as history.
-  office: ["inventory", "materials", "invoices", "accounts", "dashboard", "log"],
+  office: ["dashboard", "jobs", "materials", "inventory", "invoices", "accounts", "log"],
  
   // Design module only — matches the original app (Design + Profile only).
-  drafter: ["design"],
+  drafter: ["jobs"],
  
   // Floor workers — daily production log + their own tasks + Log history.
   cabinet_maker: ["dashboard", "jobs", "tasks", "materials", "log"],
