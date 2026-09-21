@@ -78,6 +78,10 @@ export interface EntryMaterial {
   qty: number;
   wastageQty?: number;
   notes?: string;
+  assignedQty?: number;
+  assignedById?: string;
+  assignedByName?: string;
+  assignedAt?: string;
 }
 
 export interface DailyEntry {
