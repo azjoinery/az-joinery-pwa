@@ -667,6 +667,12 @@ function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean
 
   scheduleSave();
 };
+  const setCounterValue = (key: string, value: number) => {
+  setCounts((previous) => ({
+    ...previous,
+    [key]: Math.max(0, Math.round(value || 0)),
+  }));
+};
   const addMaterialFromCatalogue = (matId: string) => {
     const already = materials.findIndex(
       (m) => m.stockItemId === matId
@@ -966,6 +972,7 @@ function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean
               value={counts[type.key] || 0}
               onIncrement={() => increment(type.key)}
               onDecrement={() => decrement(type.key)}
+              onChange={(value) => setCounterValue(type.key, value)}
             />
           ))}
         </div>
@@ -1068,11 +1075,13 @@ function Counter({
   value,
   onIncrement,
   onDecrement,
+  onChange,
 }: {
   label: string;
   value: number;
   onIncrement: () => void;
   onDecrement: () => void;
+  onChange: (value: number) => void;
 }) {
   return (
     <div className="card flex items-center justify-between gap-3 px-4 py-3">
@@ -1089,13 +1098,17 @@ function Counter({
             <path d="M5 12h14" />
           </svg>
         </button>
-        <span
-          className={`w-12 text-center font-heading text-2xl font-semibold tabular ${
-            value > 0 ? "text-brand-orange" : "text-ink-300"
-          }`}
-        >
-          {value}
-        </span>
+        <input
+         type="number"
+         min="0"
+         step="1"
+         value={value}
+         onChange={(event) => onChange(Number(event.target.value))}
+         aria-label={`${label} quantity`}
+         className={`h-11 w-16 rounded-lg border border-ink-200 bg-white text-center font-heading text-xl font-semibold tabular-nums outline-none focus:border-brand-orange ${
+         value > 0 ? "text-brand-orange" : "text-ink-300"
+         }`}
+       />
         <button
           onClick={onIncrement}
           aria-label={`Increase ${label}`}
