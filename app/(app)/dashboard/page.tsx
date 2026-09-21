@@ -463,7 +463,6 @@ function ExecutiveOverview() {
         </div>
       </section>
 
-      {canAssignMaterials && <MaterialAssignmentPanel />}
       {activeWorkers != null && activeWorkers > 0 && (
         <p className="mt-7 text-center text-xs text-ink-400">
           {activeWorkers} {activeWorkers === 1 ? "person" : "people"} logged
@@ -753,7 +752,6 @@ function FloorLogDashboard() {
           ============================================================ */}
 
       {/* Shared save-status header for the two live sections */}
-      {canAssignMaterials && <MaterialAssignmentPanel />}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Materials — live</span>
         <span className="text-xs font-medium" style={{ color: saveStatus === "error" ? "#b91c1c" : "#059669" }}>
