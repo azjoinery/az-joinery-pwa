@@ -656,6 +656,17 @@ function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean
     });
     scheduleSave();
   };
+  const setMaterialQty = (rowIdx: number, value: number) => {
+  setMaterials((prev) =>
+    prev.map((row, index) =>
+      index === rowIdx
+        ? { ...row, qty: Math.max(0, value || 0) }
+        : row
+    )
+  );
+
+  scheduleSave();
+};
   const addMaterialFromCatalogue = (matId: string) => {
     const already = materials.findIndex(
       (m) => m.stockItemId === matId
@@ -820,10 +831,24 @@ function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean
                             ? [job.jobNum, job.client || job.projectName].filter(Boolean).join(" · ")
                             : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
                         </div>
+                        {matsTab === "assigned" && (m.assignedQty || 0) > 0 && (
+  <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
+    Assigned target: {m.assignedQty} {stk?.unit || ""}
+    {m.assignedByName ? ` · by ${m.assignedByName}` : ""}
+  </div>
+)}
                       </div>
                       <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
                         <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
-                        <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                        <input
+  type="number"
+  min="0"
+  step="1"
+  value={m.qty || 0}
+  onChange={(e) => setMaterialQty(i, Number(e.target.value))}
+  className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
+  aria-label={`Quantity used for ${stk?.name || "material"}`}
+/>
                         <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
                       </div>
                     </div>
@@ -884,10 +909,26 @@ function FloorLogDashboard({ canAssignMaterials }: { canAssignMaterials: boolean
                             ? [job.jobNum, job.client || job.projectName].filter(Boolean).join(" · ")
                             : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
                         </div>
+                      {matsTab === "assigned" && (m.assignedQty || 0) > 0 && (
+  <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
+    Assigned target: {m.assignedQty} {stk?.unit || ""}
+    {m.assignedByName ? ` · by ${m.assignedByName}` : ""}
+  </div>
+)}  
                       </div>
                       <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
                         <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
-                        <div className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{m.qty || 0}</div>
+                        <input
+  type="number"
+  min="0"
+  step="1"
+  value={m.qty || 0}
+  onChange={(event) =>
+    setMaterialQty(i, Number(event.target.value))
+  }
+  className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
+  aria-label={`Quantity used for ${stk?.name || "material"}`}
+/>
                         <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
                       </div>
                     </div>
