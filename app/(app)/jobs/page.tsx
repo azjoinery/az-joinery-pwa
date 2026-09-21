@@ -27,6 +27,7 @@ import { format, isPast, parseISO } from "date-fns";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 import JobsKanban from "@/lib/components/JobsKanban";
+import DesignWorkspace from "@/app/(app)/design/page";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,14 @@ interface PurchaseOrder {
 const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
 const JOB_MANAGE_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin", "supervisor",
+]);
+
+const DUAL_JOBS_ROLES = new Set([
+  "managing_director",
+  "manager",
+  "department_manager",
+  "admin",
+  "office",
 ]);
 
 const STATUS_BADGE: Record<JobStatus, string> = {
@@ -1164,6 +1173,50 @@ function AdminView() {
   );
 }
 
+// ─── Management Jobs Workspace ────────────────────────────────────────────────
+
+function ManagementJobsWorkspace({ canManage }: { canManage: boolean }) {
+  const [category, setCategory] = useState<"design" | "production">("design");
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setCategory("design")}
+            className={`min-h-12 rounded-xl px-4 text-sm font-semibold transition-colors ${
+              category === "design"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Design
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCategory("production")}
+            className={`min-h-12 rounded-xl px-4 text-sm font-semibold transition-colors ${
+              category === "production"
+                ? "bg-orange-500 text-white shadow-sm"
+                : "bg-gray-50 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            Production
+          </button>
+        </div>
+      </div>
+
+      {category === "design" ? (
+        <DesignWorkspace />
+      ) : (
+        <JobsKanban canManage={canManage} />
+      )}
+    </div>
+  );
+}
+
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function JobsPage() {
@@ -1171,9 +1224,25 @@ export default function JobsPage() {
 
   if (!user) return null;
 
+  // MD, managers, admin and office see both categories.
+  if (DUAL_JOBS_ROLES.has(user.role)) {
+    return (
+      <ManagementJobsWorkspace
+        canManage={JOB_MANAGE_ROLES.has(user.role)}
+      />
+    );
+  }
+
+  // Design staff see Design jobs only.
+  if (user.role === "drafter" || user.role === "designer") {
+    return <DesignWorkspace />;
+  }
+
+  // Installer keeps the existing assigned-job interface.
   if (user.role === "installer") {
     return <CabinetmakerView userId={user.id} />;
   }
 
+  // Supervisor and other production roles see Production only.
   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
 }
