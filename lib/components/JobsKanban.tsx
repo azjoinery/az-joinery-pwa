@@ -129,6 +129,21 @@ function dueInfo(value?: string) {
   }
 }
 
+function nextActionFor(job: BoardJob, stages: StageDefinition[]) {
+  if (job.blocked) return "Resolve blocker";
+  if (job.completed) return "Ready for delivery";
+  const nextStage = stages[stages.findIndex(stage => stage.name === job.stage) + 1]?.name;
+  const shortNames: Record<string, string> = {
+    "Not Started": "Confirm materials",
+    "Materials In": "Start cutting",
+    "CNC Cut": "Begin assembly",
+    "Assembling": "Fit hardware",
+    "Hardware Fitted": "Complete QA",
+    "QA Passed": "Schedule delivery",
+  };
+  return shortNames[job.stage] || (nextStage ? `Move to ${nextStage}` : "Review job");
+}
+
 function Modal({ title, onClose, children }: {
   title: string;
   onClose: () => void;
@@ -367,6 +382,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const jobCard = (job: BoardJob) => {
     const due = dueInfo(job.dueDate);
     const busy = savingId === job.id;
+    const nextAction = nextActionFor(job, stages);
     return (
       <article
         key={job.id}
@@ -406,6 +422,11 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
           <div className="h-full rounded-full bg-brand-orange" style={{ width: `${job.progress}%` }} />
         </div>
         <p className="mt-1 text-right text-[10px] font-medium text-ink-400">{job.progress}% production</p>
+
+        <div className={`mt-3 rounded-lg px-2.5 py-2 text-xs ${job.blocked ? "bg-danger-light text-danger-dark" : "bg-brand-orange/10 text-brand-orange-dark"}`}>
+          <span className="font-bold uppercase tracking-wide text-[10px]">Next</span>
+          <span className="ml-1.5 font-semibold">{nextAction}</span>
+        </div>
 
         <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">{canManage ? "Move to stage" : "Current stage"}</label>
         <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={!canManage || job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
@@ -529,7 +550,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
-                <tr><th>Job</th><th>Client</th><th>Stage</th><th>Assigned To</th><th>Due</th><th>Priority</th><th></th></tr>
+                <tr><th>Job</th><th>Client</th><th>Stage</th><th>Next action</th><th>Assigned To</th><th>Due</th><th>Priority</th><th></th></tr>
               </thead>
               <tbody>
                 {filteredJobs.map(job => {
@@ -539,6 +560,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
                       <td><span className="ref">{job.ref}</span></td>
                       <td className="font-medium text-ink-900">{job.client}</td>
                       <td>{job.stage}</td>
+                      <td className={job.blocked ? "font-semibold text-danger-dark" : "text-ink-700"}>{nextActionFor(job, stages)}</td>
                       <td>{job.assignedTo?.name || <span className="italic text-ink-400">Unassigned</span>}</td>
                       <td>{due?.label || "—"}</td>
                       <td><span className={`badge ${job.priority === "High" ? "badge-danger" : job.priority === "Low" ? "badge-neutral" : "badge-info"}`}>{job.priority}</span></td>
