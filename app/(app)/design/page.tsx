@@ -289,6 +289,16 @@ export default function DesignWorkspace() {
         {canManageDesign ? "Open / Edit" : "Open"}
       </button>
 
+      {canManageDesign && job.releaseStatus !== "Released" && (
+        <button
+          type="button"
+          onClick={() => setSelectedJobId(job.id)}
+          className="w-full rounded-lg bg-orange-500 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-600"
+        >
+          Open release
+        </button>
+      )}
+
       {canManageDesign && (
         <div className="grid grid-cols-2 gap-2">
           <select
@@ -384,18 +394,18 @@ export default function DesignWorkspace() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-1">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
           <button
             type="button"
             onClick={() => setView("board")}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "board" ? "bg-orange-500 text-white" : "text-gray-600"}`}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === "board" ? "bg-ink-900 text-white" : "text-gray-600"}`}
           >
             Board
           </button>
           <button
             type="button"
             onClick={() => setView("list")}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold ${view === "list" ? "bg-orange-500 text-white" : "text-gray-600"}`}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === "list" ? "bg-ink-900 text-white" : "text-gray-600"}`}
           >
             List
           </button>
@@ -448,7 +458,7 @@ export default function DesignWorkspace() {
                               <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{job.projectName}</p>
                               <div className="mt-3 flex items-center justify-between text-[11px] text-gray-500">
                                 <span className="truncate">{job.assignedDesignerName || "Unassigned"}</span>
-                                <span>{job.designProgress ?? 0}%</span>
+                                <span>{job.releaseStatus === "Released" ? "Released" : "Release needed"}</span>
                               </div>
                             </button>
                             {jobActions(job)}
@@ -477,7 +487,7 @@ export default function DesignWorkspace() {
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
                     <span>{job.assignedDesignerName || "Unassigned"}</span>
-                    <span>{job.designProgress ?? 0}%</span>
+                    <span>{job.releaseStatus === "Released" ? "Released" : "Release needed"}</span>
                   </div>
                 </button>
                 {jobActions(job)}
@@ -532,7 +542,7 @@ function JobDesignDetail({
       setDeletingJob(false);
     }
   };
-  const [tab, setTab] = useState<"stages" | "checklist" | "variations" | "materials" | "tasks" | "activity" | "release">("stages");
+  const [tab, setTab] = useState<"stages" | "checklist" | "variations" | "materials" | "tasks" | "activity" | "release">(job.releaseStatus === "Released" ? "stages" : "release");
   const [currentJob, setCurrentJob] = useState(job);
   const [stageError, setStageError] = useState<string | null>(null);
   const [savingStage, setSavingStage] = useState(false);
