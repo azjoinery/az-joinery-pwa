@@ -66,16 +66,31 @@ interface BoardJob {
   installStage: string;
   installProgress: number;
   invoiceStatus: string;
+  purchaseRequiredCount: number;
+  purchaseOrderedCount: number;
 }
 
 interface ProductionMaterialLine {
   id: string;
+  jobId?: string;
   description?: string;
   quantity?: number;
   requiredQty?: number;
+  shortageQty?: number;
   unit?: string;
   materialStatus?: string;
+  orderStatus?: string;
+  purchaseOrderNumber?: string;
+  supplier?: string;
+  dateOrdered?: string;
+  expectedDeliveryDate?: string;
+  receivedQty?: number;
   notes?: string;
+}
+
+interface PurchaseOrder {
+  id: string;
+  poNumber: string;
 }
 
 interface ProductionMaterialDraft {
@@ -154,6 +169,8 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     installStage: raw.installStage || "Not Started",
     installProgress: Number(raw.installProgress || 0),
     invoiceStatus: raw.invoiceStatus || "Not invoiced",
+    purchaseRequiredCount: 0,
+    purchaseOrderedCount: 0,
   };
 }
 
@@ -168,6 +185,8 @@ function dueInfo(value?: string) {
 }
 
 function nextActionFor(job: BoardJob, stages: StageDefinition[]) {
+  if (job.materialReadiness === "pending" && job.purchaseRequiredCount > 0) return "Office: create purchase order";
+  if (job.materialReadiness === "pending" && job.purchaseOrderedCount > 0) return "Waiting for delivery";
   if (job.materialReadiness === "pending") return "Complete material check";
   if (!job.productionReady) return "Waiting for design release";
   if (job.blocked) return "Resolve blocker";
@@ -228,6 +247,9 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [materialEditNote, setMaterialEditNote] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
   const [checkingMaterialId, setCheckingMaterialId] = useState<string | null>(null);
+  const [poSupplier, setPoSupplier] = useState("");
+  const [poExpectedDate, setPoExpectedDate] = useState("");
+  const [poCreating, setPoCreating] = useState(false);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
   const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
@@ -254,10 +276,11 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
       setLoading(true);
       setError("");
       try {
-        const [rawJobs, rawWorkers, readiness] = await Promise.all([
+        const [rawJobs, rawWorkers, readiness, purchaseQueue] = await Promise.all([
           api.get<RawJob[]>("/jobs"),
           canManage ? api.get<RawWorker[]>("/users") : Promise.resolve([] as RawWorker[]),
           api.get<Array<{ jobId: string; status: "ready" | "pending"; ready: boolean }>>("/jobs/production-readiness").catch(() => []),
+          canManage ? api.get<ProductionMaterialLine[]>("/purchase/materials").catch(() => [] as ProductionMaterialLine[]) : Promise.resolve([] as ProductionMaterialLine[]),
         ]);
 
         let productionStages = DEFAULT_STAGES;
@@ -274,10 +297,26 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
         setStages(productionStages);
         setWorkers(activeWorkers);
         const readinessByJob = new Map(readiness.map(item => [item.jobId, item.status]));
-        setJobs(rawJobs.map(job => normaliseJob({
-          ...job,
-          materialReadiness: readinessByJob.get(job.id) || "not_required",
-        }, productionStages, activeWorkers)));
+        const purchaseByJob = purchaseQueue.reduce((map, material) => {
+          const jobId = material.jobId || "";
+          if (!jobId) return map;
+          const current = map.get(jobId) || { required: 0, ordered: 0 };
+          if (material.materialStatus === "Needs to be Purchased") current.required += 1;
+          if (material.materialStatus === "Ordered" || material.materialStatus === "Partially Received") current.ordered += 1;
+          map.set(jobId, current);
+          return map;
+        }, new Map<string, { required: number; ordered: number }>());
+        setJobs(rawJobs.map(job => {
+          const summary = purchaseByJob.get(job.id) || { required: 0, ordered: 0 };
+          return {
+            ...normaliseJob({
+              ...job,
+              materialReadiness: readinessByJob.get(job.id) || "not_required",
+            }, productionStages, activeWorkers),
+            purchaseRequiredCount: summary.required,
+            purchaseOrderedCount: summary.ordered,
+          };
+        }));
       } catch {
         setError("Jobs could not be loaded. Check that the Render API is running and NEXT_PUBLIC_API_URL is correct in Vercel.");
       } finally {
@@ -455,9 +494,15 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
             ...current,
             materialReadiness: result.status,
             productionReady: result.status === "ready" ? true : current.productionReady,
+            purchaseRequiredCount: result.purchaseRequired || 0,
+            purchaseOrderedCount: result.status === "ready" ? 0 : current.purchaseOrderedCount,
           }
         : current
       );
+      if (viewingJob?.id === job.id) {
+        const refreshed = await api.get<ProductionMaterialLine[]>(`/jobs/${job.id}/materials`);
+        setViewingMaterials(refreshed || []);
+      }
       if (result.status === "pending") {
         setError(`${job.ref}: material check sent to purchasing. ${result.purchaseRequired || 0} item(s) need ordering.`);
       }
@@ -465,6 +510,33 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
       setError(`Could not complete the material check for ${job.ref}.`);
     } finally {
       setCheckingMaterialId(null);
+    }
+  };
+
+  const createPurchaseOrder = async () => {
+    if (!canManage || !viewingJob || !poSupplier.trim() || poCreating) return;
+    setPoCreating(true);
+    setError("");
+    try {
+      const po = await api.post<PurchaseOrder>(`/jobs/${viewingJob.id}/materials/create-po`, {
+        supplier: poSupplier.trim(),
+        expectedDate: poExpectedDate,
+        notes: `Created from ${viewingJob.ref} production material check`,
+      });
+      const refreshed = await api.get<ProductionMaterialLine[]>(`/jobs/${viewingJob.id}/materials`);
+      setViewingMaterials(refreshed || []);
+      setPoSupplier("");
+      setPoExpectedDate("");
+      setViewingJob(current => current?.id === viewingJob.id
+        ? { ...current, purchaseRequiredCount: 0, purchaseOrderedCount: 1 }
+        : current
+      );
+      await loadJobs();
+      setError(`${po.poNumber}: purchase order created for ${viewingJob.ref}. Office can confirm it in Inventory > Purchase Orders.`);
+    } catch {
+      setError(`Could not create a purchase order for ${viewingJob.ref}. Add a supplier and try again.`);
+    } finally {
+      setPoCreating(false);
     }
   };
 
@@ -572,13 +644,21 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
           <span className="ml-1.5 font-semibold">{nextAction}</span>
         </div>
 
+        {job.materialReadiness === "pending" && (job.purchaseRequiredCount > 0 || job.purchaseOrderedCount > 0) && (
+          <div className="mt-2 rounded-lg border border-warning/30 bg-warning-light px-2.5 py-2 text-xs text-warning-dark">
+            {job.purchaseRequiredCount > 0
+              ? `${job.purchaseRequiredCount} item${job.purchaseRequiredCount === 1 ? "" : "s"} need PO`
+              : `${job.purchaseOrderedCount} item${job.purchaseOrderedCount === 1 ? "" : "s"} ordered, waiting for receipt`}
+          </div>
+        )}
+
         {canManage && job.materialReadiness === "pending" && (
           <button
             className="btn-primary btn-sm mt-2 w-full"
             disabled={checkingMaterialId === job.id}
             onClick={() => runMaterialCheck(job)}
           >
-            {checkingMaterialId === job.id ? "Checking materials..." : "Run material check"}
+            {checkingMaterialId === job.id ? "Checking materials..." : "Refresh material check"}
           </button>
         )}
 
@@ -775,11 +855,53 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
               {materialsLoading ? <p className="mt-2 text-ink-500">Loading materials…</p> : viewingMaterials.length === 0 ? <p className="mt-2 text-ink-500">No required materials listed.</p> : (
                 <div className="mt-2 space-y-2">
                   {viewingMaterials.map(material => (
-                    <div key={material.id} className="flex items-center justify-between gap-3 rounded-lg bg-ink-50 px-3 py-2">
-                      <div className="min-w-0"><p className="truncate font-medium text-ink-800">{material.description || "Material"}</p>{material.notes && <p className="truncate text-xs text-ink-500">{material.notes}</p>}</div>
-                      <span className="shrink-0 font-semibold text-ink-900">{material.requiredQty ?? material.quantity ?? 0} {material.unit || ""}</span>
+                    <div key={material.id} className="rounded-lg bg-ink-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-ink-800">{material.description || "Material"}</p>
+                          {material.notes && <p className="truncate text-xs text-ink-500">{material.notes}</p>}
+                          {material.purchaseOrderNumber && <p className="truncate text-xs text-ink-500">{material.purchaseOrderNumber}{material.supplier ? ` · ${material.supplier}` : ""}</p>}
+                        </div>
+                        <span className="shrink-0 font-semibold text-ink-900">{material.requiredQty ?? material.quantity ?? 0} {material.unit || ""}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className={`badge ${
+                          material.materialStatus === "Needs to be Purchased" ? "badge-warning"
+                            : material.materialStatus === "Ordered" || material.materialStatus === "Partially Received" ? "badge-info"
+                            : material.materialStatus === "Received" || material.materialStatus === "Available in Workshop" || material.materialStatus === "Offcut Available" ? "badge-success"
+                            : "badge-neutral"
+                        }`}>{material.materialStatus || "Required"}</span>
+                        {material.orderStatus && <span className="text-ink-500">{material.orderStatus}</span>}
+                        {material.expectedDeliveryDate && <span className="text-ink-500">ETA {material.expectedDeliveryDate}</span>}
+                      </div>
                     </div>
                   ))}
+                </div>
+              )}
+              {canManage && viewingMaterials.some(material => material.materialStatus === "Needs to be Purchased") && (
+                <div className="mt-3 rounded-xl border border-warning/30 bg-warning-light p-3">
+                  <p className="text-sm font-semibold text-warning-dark">Create purchase order</p>
+                  <p className="mt-1 text-xs text-warning-dark/80">This moves all missing items for this job into Inventory &gt; Purchase Orders.</p>
+                  <input
+                    className="input mt-3"
+                    value={poSupplier}
+                    onChange={event => setPoSupplier(event.target.value)}
+                    placeholder="Supplier name"
+                  />
+                  <input
+                    type="date"
+                    className="input mt-2"
+                    value={poExpectedDate}
+                    onChange={event => setPoExpectedDate(event.target.value)}
+                  />
+                  <button className="btn-primary btn-sm mt-3 w-full" disabled={!poSupplier.trim() || poCreating} onClick={createPurchaseOrder}>
+                    {poCreating ? "Creating PO..." : "Create PO for missing materials"}
+                  </button>
+                </div>
+              )}
+              {canManage && viewingMaterials.some(material => material.materialStatus === "Ordered" || material.materialStatus === "Partially Received") && (
+                <div className="mt-3 rounded-xl border border-info/25 bg-info-light p-3 text-sm text-info-dark">
+                  PO is created. Confirm and receive the goods in Inventory &gt; Purchase Orders. Once received, this job becomes material ready.
                 </div>
               )}
               {canManage && viewingMaterials.length > 0 && <button className="btn-secondary btn-sm mt-3 w-full" onClick={openMaterialEditor}>Edit required quantities / notes</button>}
