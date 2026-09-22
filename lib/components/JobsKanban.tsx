@@ -31,6 +31,9 @@ interface RawJob {
   releaseStatus?: string;
   releasedAt?: string;
   materialReadiness?: "ready" | "pending" | "not_required";
+  installStage?: string;
+  installProgress?: number;
+  invoiceStatus?: string;
   blocked?: boolean;
   blockedReason?: string;
 }
@@ -60,6 +63,9 @@ interface BoardJob {
   completed: boolean;
   productionReady: boolean;
   materialReadiness: "ready" | "pending" | "not_required";
+  installStage: string;
+  installProgress: number;
+  invoiceStatus: string;
 }
 
 interface EditJobForm {
@@ -127,6 +133,9 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     completed,
     productionReady: productionReady && materialReadiness !== "pending",
     materialReadiness,
+    installStage: raw.installStage || "Not Started",
+    installProgress: Number(raw.installProgress || 0),
+    invoiceStatus: raw.invoiceStatus || "Not invoiced",
   };
 }
 
@@ -630,6 +639,8 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
               <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Next action</p><p className="mt-1 font-semibold text-brand-orange-dark">{nextActionFor(viewingJob, stages)}</p></div>
               <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Assigned to</p><p className="mt-1 font-semibold text-ink-900">{viewingJob.assignedTo?.name || "Unassigned"}</p></div>
               <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Due</p><p className="mt-1 font-semibold text-ink-900">{dueInfo(viewingJob.dueDate)?.label || "No due date"}</p></div>
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Delivery / install</p><p className="mt-1 font-semibold text-ink-900">{viewingJob.installStage} · {viewingJob.installProgress}%</p></div>
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Invoice</p><p className="mt-1 font-semibold text-ink-900">{viewingJob.invoiceStatus}</p></div>
             </div>
             {viewingJob.phone && <p><span className="font-semibold text-ink-700">Phone:</span> {viewingJob.phone}</p>}
             {viewingJob.siteAddress && <p><span className="font-semibold text-ink-700">Site:</span> {viewingJob.siteAddress}</p>}
