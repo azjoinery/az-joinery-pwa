@@ -12,7 +12,7 @@ import {
   type NavGroup,
 } from "@/lib/roles";
 import NotificationBell from "@/lib/components/NotificationBell";
-import Icon from "@/lib/components/Icon";
+import Icon, { type IconName } from "@/lib/components/Icon";
 import { BrandLockup, LogoFull, LogoMark } from "@/lib/components/Brand";
 import InstallPrompt from "@/lib/components/InstallPrompt";
 import { PushSetup } from "@/lib/usePushNotifications";
@@ -254,12 +254,17 @@ function MoreMenu({
   pathname,
   onLogout,
 }: {
-  items: { key: string; href: string; label: string; icon: any }[];
+  items: { key: string; href: string; label: string; icon: IconName; group: NavGroup }[];
   pathname: string;
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const activeInMenu = items.some((i) => i.href === pathname);
+  const groupedItems = NAV_GROUP_ORDER.map((group) => ({
+    group,
+    label: mobileGroupLabel(group),
+    items: items.filter((item) => item.group === group),
+  })).filter((section) => section.items.length > 0);
 
   return (
     <>
@@ -285,29 +290,44 @@ function MoreMenu({
           aria-modal="true"
         >
           <div
-            className="rounded-t-2xl bg-white p-4 pb-8 animate-fade-up"
+            className="max-h-[82vh] overflow-y-auto rounded-t-2xl bg-white p-4 pb-8 animate-fade-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink-200" />
-            <div className="grid grid-cols-3 gap-2">
-              {items.map((item) => {
-                const active = pathname === item.href;
-                return (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={`flex flex-col items-center gap-2 rounded-xl border p-4 text-xs font-medium transition-colors ${
-                      active
-                        ? "border-brand-orange bg-brand-orange/10 text-brand-orange-dark"
-                        : "border-ink-200 text-ink-700 hover:bg-ink-50"
-                    }`}
-                  >
-                    <Icon name={item.icon} size={22} />
-                    {item.label}
-                  </Link>
-                );
-              })}
+            <div className="mb-4">
+              <h2 className="font-heading text-lg font-semibold text-ink-900">More</h2>
+              <p className="mt-1 text-sm text-ink-500">
+                Everything else, grouped by how the business runs.
+              </p>
+            </div>
+            <div className="space-y-5">
+              {groupedItems.map((section) => (
+                <div key={section.group}>
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.13em] text-ink-500">
+                    {section.label}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {section.items.map((item) => {
+                      const active = pathname === item.href;
+                      return (
+                        <Link
+                          key={item.key}
+                          href={item.href}
+                          onClick={() => setOpen(false)}
+                          className={`flex min-h-[5.75rem] flex-col items-center justify-center gap-2 rounded-xl border p-3 text-center text-xs font-medium transition-colors ${
+                            active
+                              ? "border-brand-orange bg-brand-orange/10 text-brand-orange-dark"
+                              : "border-ink-200 text-ink-700 hover:bg-ink-50"
+                          }`}
+                        >
+                          <Icon name={item.icon} size={22} />
+                          <span className="leading-tight">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
             <button
               onClick={onLogout}
@@ -321,6 +341,11 @@ function MoreMenu({
       )}
     </>
   );
+}
+
+function mobileGroupLabel(group: NavGroup) {
+  if (group === "Commercial") return "Money";
+  return group;
 }
 
 /** Full-screen branded splash while the session is being checked. */
