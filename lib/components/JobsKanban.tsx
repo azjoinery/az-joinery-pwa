@@ -28,6 +28,8 @@ interface RawJob {
   targetProductionDate?: string;
   productionStage?: string;
   productionProgress?: number;
+  releaseStatus?: string;
+  releasedAt?: string;
   blocked?: boolean;
   blockedReason?: string;
 }
@@ -55,6 +57,7 @@ interface BoardJob {
   blocked: boolean;
   blockedReason?: string;
   completed: boolean;
+  productionReady: boolean;
 }
 
 interface EditJobForm {
@@ -89,6 +92,9 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     ? raw.productionStage!
     : stages[0].name;
   const statusText = `${raw.status || ""} ${raw.currentStatus || ""}`.toLowerCase();
+  const productionReady = raw.releaseStatus
+    ? raw.releaseStatus === "Released"
+    : /ready for production|in production|production|completed|delivered|done/.test(statusText);
   const blocked = Boolean(raw.blocked) || statusText.includes("blocked");
   const completed = Number(raw.productionProgress || 0) >= 100 || /completed|delivered|done/.test(statusText);
   const assignedWorker = workers.find(worker =>
@@ -116,6 +122,7 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     blocked,
     blockedReason: raw.blockedReason || undefined,
     completed,
+    productionReady,
   };
 }
 
@@ -130,6 +137,7 @@ function dueInfo(value?: string) {
 }
 
 function nextActionFor(job: BoardJob, stages: StageDefinition[]) {
+  if (!job.productionReady) return "Waiting for design release";
   if (job.blocked) return "Resolve blocker";
   if (job.completed) return "Ready for delivery";
   const nextStage = stages[stages.findIndex(stage => stage.name === job.stage) + 1]?.name;
@@ -238,7 +246,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   };
 
   const moveJob = async (job: BoardJob, stageName: string) => {
-    if (!canManage || job.blocked || job.stage === stageName || savingId) return;
+    if (!canManage || !job.productionReady || job.blocked || job.stage === stageName || savingId) return;
     const stage = stages.find(item => item.name === stageName);
     if (!stage) return;
     const previous = job;
@@ -440,13 +448,13 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
         </div>
         <p className="mt-1 text-right text-[10px] font-medium text-ink-400">{job.progress}% production</p>
 
-        <div className={`mt-3 rounded-lg px-2.5 py-2 text-xs ${job.blocked ? "bg-danger-light text-danger-dark" : "bg-brand-orange/10 text-brand-orange-dark"}`}>
+        <div className={`mt-3 rounded-lg px-2.5 py-2 text-xs ${job.blocked ? "bg-danger-light text-danger-dark" : !job.productionReady ? "bg-info-light text-info-dark" : "bg-brand-orange/10 text-brand-orange-dark"}`}>
           <span className="font-bold uppercase tracking-wide text-[10px]">Next</span>
           <span className="ml-1.5 font-semibold">{nextAction}</span>
         </div>
 
-        <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">{canManage ? "Move to stage" : "Current stage"}</label>
-        <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={!canManage || job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
+        <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">{canManage && job.productionReady ? "Move to stage" : "Current stage"}</label>
+        <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={!canManage || !job.productionReady || job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
           {stages.map(stage => <option key={stage.name} value={stage.name}>{stage.name}</option>)}
         </select>
 
