@@ -705,7 +705,11 @@ function FloorLogDashboard() {
       const data = await api.get<DailyEntry>(`/entries/mine?date=${today}`);
       if (data) {
         setCounts(data.counts || {});
-        setJobCounts(data.jobCounts || {});
+        setJobCounts(
+  (data as DailyEntry & {
+    jobCounts?: Record<string, number>;
+  }).jobCounts || {}
+);
         setNote(data.note || "");
         setMaterials(data.materials || []);
       }
