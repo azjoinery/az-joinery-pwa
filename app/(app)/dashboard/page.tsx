@@ -171,7 +171,7 @@ function ExecutiveOverview() {
       });
 
     api
-      .get<{ length: number }[]>("/stock/items?lowOnly=true&active=true")
+      .get<unknown[]>("/stock/items?lowOnly=true&active=true")
       .then((r) => {
         if (alive) setLowStock(Array.isArray(r) ? r.length : 0);
       })
@@ -197,121 +197,93 @@ function ExecutiveOverview() {
 
   return (
     <div className="page pb-28">
-      {/* Header */}
-      <div className="mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">
-          Workshop
-        </p>
-        <h1 className="page-title mt-1">
-          {execGreeting()}, {firstName}
-        </h1>
-        <p className="mt-1 text-sm text-ink-500">{execToday()}</p>
-      </div>
+      <WorkshopHero eyebrow="Workshop" title={`${execGreeting()}, ${firstName}`} subtitle={execToday()}>
+        <div className="mt-5 flex flex-wrap gap-x-8 gap-y-4">
+          <HeroFigure label="Active jobs" value={totals ? String(totals.activeJobs) : "—"} primary />
+          <HeroFigure label="Overdue" value={totals ? String(totals.overdue) : "—"} />
+          {seesMoney ? (
+            <HeroFigure label="Outstanding" value={money ? execCurrency(money.outstanding) : "—"} />
+          ) : null}
+        </div>
+      </WorkshopHero>
 
       {failed ? (
-        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+        <div className="mb-6 rounded-card border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
           Couldn&apos;t load the overview just now. Pull to refresh or try again shortly.
         </div>
       ) : null}
 
-      {/* Four calm numbers */}
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <BigStat label="Active jobs" value={totals?.activeJobs} loading={loading} />
-        <BigStat label="Needs materials" value={totals?.officeJobs} loading={loading} accent="#8B5CF6" href="/materials" />
-        <BigStat label="In production" value={totals?.productionQueue} loading={loading} accent="#22C55E" href="/production" />
-        <BigStat label="Overdue" value={totals?.overdue} loading={loading} accent="#DC2626" warn />
-      </div>
-
-      {/* Needs attention — money + office, for management */}
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-bold text-ink-950">Needs attention</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {seesMoney ? (
-            <Link href="/accounts" className="block rounded-2xl border border-ink-200 bg-white shadow-sm p-4 transition hover:border-ink-300 active:opacity-90">
-              <div className="flex items-center gap-2">
-                <span className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: "#0ea5a31a" }}>
-                  <Icon name="dollar" size={17} />
-                </span>
-                <span className="text-sm font-bold text-ink-950">Money</span>
-              </div>
-              <div className="mt-3 flex items-end justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Outstanding</div>
-                  <div className="text-2xl font-extrabold tabular-nums text-ink-950">
-                    {money ? execCurrency(money.outstanding) : "—"}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">Overdue inv.</div>
-                  <div
-                    className="text-2xl font-extrabold tabular-nums"
-                    style={{ color: (money?.overdueInvoices || 0) > 0 ? "#DC2626" : "#12161d" }}
-                  >
-                    {money ? money.overdueInvoices : "—"}
-                  </div>
-                </div>
-              </div>
-            </Link>
-          ) : null}
-
-          <Link href="/materials" className="block rounded-2xl border border-ink-200 bg-white shadow-sm p-4 transition hover:border-ink-300 active:opacity-90">
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: "#8b5cf61a" }}>
-                <Icon name="inventory" size={17} />
-              </span>
-              <span className="text-sm font-bold text-ink-950">Office</span>
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <div className="text-2xl font-extrabold tabular-nums" style={{ color: (totals?.officeJobs || 0) > 0 ? "#8B5CF6" : "#12161d" }}>
-                  {loading ? "…" : totals?.officeJobs ?? 0}
-                </div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Jobs short</div>
-              </div>
-              <div>
-                <div className="text-2xl font-extrabold tabular-nums text-ink-950">{loading ? "…" : totals?.officeLines ?? 0}</div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">To order</div>
-              </div>
-              <div>
-                <div className="text-2xl font-extrabold tabular-nums" style={{ color: (lowStock || 0) > 0 ? "#D97706" : "#12161d" }}>
-                  {lowStock == null ? "…" : lowStock}
-                </div>
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Low stock</div>
-              </div>
-            </div>
-          </Link>
+      {/* Four numbers */}
+      <section className="mb-7">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile icon="jobs" label="Active jobs" value={totals?.activeJobs ?? null} href="/jobs" />
+          <StatTile icon="inventory" label="Needs materials" value={totals?.officeJobs ?? null} href="/materials" />
+          <StatTile icon="wrench" label="In production" value={totals?.productionQueue ?? null} href="/production" />
+          <StatTile icon="alert" label="Overdue" value={totals?.overdue ?? null} href="/jobs" />
         </div>
       </section>
 
-      {/* The pipeline — the whole job flow in one calm list */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-lg font-bold text-ink-950">Job pipeline</h2>
-          <span className="text-xs text-ink-400">Tap a stage to see its jobs</span>
+      {/* Needs attention — money + office */}
+      <section className="mb-7">
+        <SectionHeading>Needs attention</SectionHeading>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {seesMoney ? (
+            <FlowCard
+              href="/accounts"
+              icon="accounts"
+              title="Money"
+              main={money ? execCurrency(money.outstanding) : "—"}
+              mainLabel="outstanding"
+              detail={
+                money
+                  ? `${money.overdueInvoices} overdue invoice${money.overdueInvoices === 1 ? "" : "s"}`
+                  : "Tap to open accounts"
+              }
+            />
+          ) : null}
+          <FlowCard
+            href="/materials"
+            icon="inventory"
+            title="Office"
+            main={totals ? String(totals.officeJobs) : "—"}
+            mainLabel="jobs short"
+            detail={`${totals?.officeLines ?? 0} lines to order · ${lowStock ?? 0} low stock`}
+          />
         </div>
-        <div className="rounded-2xl border border-ink-200 bg-white shadow-sm p-4">
+      </section>
+
+      {/* Job pipeline — the whole flow in one calm list */}
+      <section className="mb-7">
+        <SectionHeading action={<span className="text-xs text-ink-400">Tap a stage</span>}>
+          Job pipeline
+        </SectionHeading>
+        <div className="card card-pad">
           {loading ? (
             <PipelineSkeleton />
           ) : (
             <div className="flex flex-col gap-2.5">
               {stages.map((s) => (
-                <Link key={s.key} href={s.href} className="-mx-1 flex items-center gap-3 rounded-lg px-1 py-0.5 transition active:bg-ink-50">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
-                  <span className="w-32 shrink-0 truncate text-sm font-medium text-ink-700 sm:w-40">
-                    {s.label}
-                  </span>
-                  <span className="h-6 flex-1 overflow-hidden rounded-md bg-ink-50">
+                <Link
+                  key={s.key}
+                  href={s.href}
+                  className="-mx-1 flex items-center gap-3 rounded-lg px-1 py-1 transition-colors hover:bg-ink-50"
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-brand-orange"
+                    style={{ opacity: s.count ? 1 : 0.3 }}
+                  />
+                  <span className="w-32 shrink-0 truncate text-sm text-ink-700 sm:w-40">{s.label}</span>
+                  <span className="h-5 flex-1 overflow-hidden rounded bg-ink-100">
                     <span
-                      className="block h-full rounded-md"
+                      className="block h-full rounded bg-brand-orange"
                       style={{
                         width: `${s.count ? Math.max(6, (s.count / maxCount) * 100) : 0}%`,
-                        background: s.color,
                         opacity: 0.85,
                         transition: "width .35s ease",
                       }}
                     />
                   </span>
-                  <span className="w-7 text-right text-base font-bold tabular-nums text-ink-950">
+                  <span className="w-7 text-right font-heading text-base font-semibold tabular tracking-tight text-ink-900">
                     {s.count}
                   </span>
                 </Link>
@@ -323,28 +295,25 @@ function ExecutiveOverview() {
 
       {/* Needs you today */}
       {summary && summary.overdueJobs.length > 0 ? (
-        <section className="mt-8">
-          <h2 className="mb-3 text-lg font-bold text-ink-950">Needs you today</h2>
+        <section className="mb-7">
+          <SectionHeading>Needs you today</SectionHeading>
           <div className="flex flex-col gap-2">
             {summary.overdueJobs.map((j) => (
               <Link
                 key={j.id}
                 href="/jobs"
-                className="flex items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white shadow-sm p-3.5 transition hover:border-ink-300 active:opacity-90"
+                className="card-interactive flex items-center justify-between gap-3 p-4"
               >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-ink-950">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-ink-900">
                     #{j.jobNum} · {j.client}
-                  </div>
-                  <div className="text-xs text-ink-500">
+                  </span>
+                  <span className="mt-0.5 block text-xs text-ink-500">
                     {execStageLabel(j.stage)}
                     {j.dueDate ? ` · due ${j.dueDate}` : ""}
-                  </div>
-                </div>
-                <span
-                  className="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold text-white"
-                  style={{ background: "#DC2626" }}
-                >
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
                   Overdue
                 </span>
               </Link>
@@ -353,20 +322,23 @@ function ExecutiveOverview() {
         </section>
       ) : null}
 
-      {/* Jump to the three departments */}
-      <section className="mt-8">
-        <h2 className="mb-3 text-lg font-bold text-ink-950">Jump to</h2>
+      {/* Quick actions (restored) */}
+      <section>
+        <SectionHeading>Quick actions</SectionHeading>
         <div className="grid grid-cols-3 gap-3">
-          <ExecJump href="/design" icon="design" label="Design" />
-          <ExecJump href="/materials" icon="inventory" label="Office" />
-          <ExecJump href="/production" icon="wrench" label="Production" />
+          <QuickAction href="/jobs" icon="jobs" label="Jobs" />
+          <QuickAction href="/tasks" icon="tasks" label="Tasks" />
+          <QuickAction href="/materials" icon="inventory" label="Materials" />
+          <QuickAction href="/sales" icon="sales" label="Sales" />
+          <QuickAction href="/invoices" icon="invoices" label="Invoices" />
+          <QuickAction href="/analytics" icon="analytics" label="Reports" />
         </div>
       </section>
     </div>
   );
 }
 
-/* ---- Executive dashboard pieces (self-contained) ---- */
+/* ---- Executive dashboard data + helpers (self-contained) ---- */
 
 type PipelineStage = {
   key: string;
@@ -400,62 +372,14 @@ type MoneySummary = {
   monthlyRevenue?: number;
 };
 
-function BigStat({
-  label,
-  value,
-  loading,
-  accent,
-  warn,
-  href,
-}: {
-  label: string;
-  value?: number;
-  loading?: boolean;
-  accent?: string;
-  warn?: boolean;
-  href?: string;
-}) {
-  const hot = (value || 0) > 0;
-  const body = (
-    <div className="rounded-2xl border border-ink-200 bg-white shadow-sm p-3.5">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{label}</p>
-      <p
-        className="mt-1 text-3xl font-extrabold tabular-nums"
-        style={{ color: accent && hot ? accent : "#12161d" }}
-      >
-        {loading ? "…" : value ?? 0}
-      </p>
-    </div>
-  );
-  return href ? (
-    <Link href={href} className="block">
-      {body}
-    </Link>
-  ) : (
-    body
-  );
-}
-
-function ExecJump({ href, icon, label }: { href: string; icon: IconName; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex flex-col items-center gap-2 rounded-xl border border-ink-200 bg-white shadow-sm p-4 text-center transition hover:border-ink-300 active:opacity-90"
-    >
-      <Icon name={icon} size={22} className="text-brand-orange" />
-      <span className="text-xs font-semibold text-ink-700">{label}</span>
-    </Link>
-  );
-}
-
 function PipelineSkeleton() {
   return (
     <div className="flex flex-col gap-2.5">
       {Array.from({ length: 7 }).map((_, i) => (
         <div key={i} className="flex items-center gap-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-ink-200" />
+          <span className="h-2 w-2 rounded-full bg-ink-200" />
           <span className="h-4 w-32 rounded bg-ink-100" />
-          <span className="h-6 flex-1 rounded-md bg-ink-100" />
+          <span className="h-5 flex-1 rounded bg-ink-100" />
         </div>
       ))}
     </div>
