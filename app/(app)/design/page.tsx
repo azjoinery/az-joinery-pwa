@@ -946,56 +946,51 @@ function JobDesignDetail({
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-        <button
-          onClick={() => setTab("stages")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "stages" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Workflow
-        </button>
-        <button
-          onClick={() => setTab("checklist")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Checks
-        </button>
-        <button
-          onClick={() => setTab("activity")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "activity" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Activity
-        </button>
-        <button
-          onClick={() => setTab("release")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "release" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Release
-        </button>
-        <button
-          onClick={() => setShowMoreTools((open) => !open)}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${showMoreTools ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          More
-        </button>
-      </div>
+<div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+  <button
+    onClick={() => setTab("stages")}
+    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "stages" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+  >
+    Workflow
+  </button>
+  <button
+    onClick={() => setTab("checklist")}
+    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+  >
+    Checks
+  </button>
+  <button
+    onClick={() => setTab("release")}
+    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "release" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+  >
+    Release
+  </button>
+  <button
+    onClick={() => setShowMoreTools((open) => !open)}
+    className={`px-4 py-2 font-medium whitespace-nowrap ${showMoreTools ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+  >
+    More
+  </button>
+</div>
 
-      {showMoreTools && (
-        <div className="flex gap-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
-          {([
-            ["variations", `Variations (${variations.length})`],
-            ["materials", `Materials (${materials.length})`],
-            ["tasks", `Tasks (${designTasks.length})`],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${tab === key ? "bg-ink-900 text-white" : "bg-white text-gray-600"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+{showMoreTools && (
+  <div className="flex gap-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+    {([
+      ["variations", `Variations (${variations.length})`],
+      ["materials", `Materials (${materials.length})`],
+      ["tasks", `Tasks (${designTasks.length})`],
+      ["activity", "Activity"],
+    ] as const).map(([key, label]) => (
+      <button
+        key={key}
+        onClick={() => setTab(key)}
+        className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${tab === key ? "bg-ink-900 text-white" : "bg-white text-gray-600"}`}
+      >
+        {label}
+      </button>
+    ))}
+  </div>
+)}
 
       {tab === "stages" && (
         <div className="space-y-2">
