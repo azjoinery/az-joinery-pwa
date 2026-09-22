@@ -445,7 +445,6 @@ function ExecutiveOverview() {
   main={designInProgress != null ? String(designInProgress) : "—"}
   mainLabel="in progress"
   detail={`${designReady ?? "—"} ready to release`}
-/>
           />
           <FlowCard
             href="/jobs"
