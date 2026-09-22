@@ -660,6 +660,7 @@ function pickDept(stk?: StockPick): "cnc" | "hardware" {
 function FloorLogDashboard() {
   const { user } = useAuth();
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [jobCounts, setJobCounts] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -668,7 +669,7 @@ function FloorLogDashboard() {
   // Materials used today — deducted from stock on save (delta-reconciled server-side).
   const [materials, setMaterials] = useState<EntryMaterial[]>([]);
   const [stockList, setStockList] = useState<StockPick[]>([]);
-  const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string }[]>([]);
+  const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string; assignedStaff?: string; status?: string; currentStatus?: string }[]>([]);
 
   // Counter-based materials UI (Slice 1) — Assigned / Record tabs.
   // Each + / − tap updates local materials state and schedules a debounced save.
@@ -704,6 +705,7 @@ function FloorLogDashboard() {
       const data = await api.get<DailyEntry>(`/entries/mine?date=${today}`);
       if (data) {
         setCounts(data.counts || {});
+        setJobCounts(data.jobCounts || {});
         setNote(data.note || "");
         setMaterials(data.materials || []);
       }
@@ -725,6 +727,15 @@ function FloorLogDashboard() {
   const decrement = (key: string) =>
     setCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
 
+  const incrementJob = (jobId: string) =>
+    setJobCounts((prev) => ({ ...prev, [jobId]: (prev[jobId] || 0) + 1 }));
+
+  const decrementJob = (jobId: string) =>
+    setJobCounts((prev) => ({ ...prev, [jobId]: Math.max(0, (prev[jobId] || 0) - 1) }));
+
+  const setJobCount = (jobId: string, value: number) =>
+    setJobCounts((prev) => ({ ...prev, [jobId]: Math.max(0, Math.round(value || 0)) }));
+
   // Debounced save fired by counter taps. Sends the current entry (counts+note+materials)
   // — the backend reconciles materials by DELTA, so pressing + twice never double-deducts.
   const scheduleSave = () => {
@@ -739,7 +750,7 @@ function FloorLogDashboard() {
             const job = jobList.find((j) => j.id === m.jobId);
             return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
           });
-        await api.post("/entries", { date: today, counts, note, materials: rows });
+      await api.post("/entries", { date: today, counts, jobCounts, note, materials: rows });
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus((s) => (s === "saved" ? "" : s)), 1600);
       } catch {
@@ -804,7 +815,7 @@ function FloorLogDashboard() {
           const job = jobList.find((j) => j.id === m.jobId);
           return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
         });
-      await api.post("/entries", { date: today, counts, note, materials: cleanMaterials });
+      await api.post("/entries", { date: today, counts, jobCounts, note, materials: cleanMaterials });
       setOk(true);
       setMessage(
         cleanMaterials.length > 0
@@ -822,7 +833,14 @@ function FloorLogDashboard() {
     }
   };
 
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) + Object.values(jobCounts).reduce((a, b) => a + b, 0);
+  const floorJobs = jobList.filter((job) => {
+    const status = `${job.status || ""} ${job.currentStatus || ""}`.toLowerCase();
+    const done = /completed|delivered|done/.test(status);
+    if (done) return false;
+    if (user?.role === "supervisor") return true;
+    return job.assignedStaff === user?.id || job.assignedStaff === user?.name;
+  });
 
   return (
     <div className="page">
@@ -841,7 +859,7 @@ function FloorLogDashboard() {
         </div>
       </WorkshopHero>
 
-      {false && <>
+      <>
       {/* ============================================================
           Slice 6 — three sections. CNC + Hardware are live (deduct
           stock on tap). Assembly is a draft tally (saves on Submit).
@@ -1046,7 +1064,34 @@ function FloorLogDashboard() {
         );
       })()}
 
-      </>}
+      </>
+
+      {/* Per-job production counter. Stored separately from the assembly tally. */}
+      <section className="mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <div>
+            <h2 className="section-title">Jobs today</h2>
+            <p className="mt-0.5 text-xs text-gray-500">Record completed units against the assigned job.</p>
+          </div>
+          <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">Daily</span>
+        </div>
+        {floorJobs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">No active jobs assigned today.</div>
+        ) : (
+          <div className="space-y-2.5">
+            {floorJobs.map((job) => (
+              <Counter
+                key={job.id}
+                label={[job.jobNum && `#${job.jobNum}`, job.client || job.projectName || "Job"].filter(Boolean).join(" — ")}
+                value={jobCounts[job.id] || 0}
+                onIncrement={() => incrementJob(job.id)}
+                onDecrement={() => decrementJob(job.id)}
+                onChange={(value) => setJobCount(job.id, value)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* ================ Assembly (tally, not stock) ================ */}
       <section className="mb-6">
