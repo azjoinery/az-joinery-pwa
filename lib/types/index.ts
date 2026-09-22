@@ -88,9 +88,10 @@ export interface DailyEntry {
   id: string;
   userId: string;
   employeeId?: string;
-employeeName?: string;
+  employeeName?: string;
   date: string;
   counts: Record<string, number>;
+  jobCounts?: Record<string, number>;
   note: string;
   materials?: EntryMaterial[];
   createdAt: string;
