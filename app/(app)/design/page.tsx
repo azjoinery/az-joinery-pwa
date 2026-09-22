@@ -543,6 +543,7 @@ function JobDesignDetail({
     }
   };
   const [tab, setTab] = useState<"stages" | "checklist" | "variations" | "materials" | "tasks" | "activity" | "release">(job.releaseStatus === "Released" ? "stages" : "release");
+  const [showMoreTools, setShowMoreTools] = useState(false);
   const [currentJob, setCurrentJob] = useState(job);
   const [stageError, setStageError] = useState<string | null>(null);
   const [savingStage, setSavingStage] = useState(false);
@@ -956,25 +957,7 @@ function JobDesignDetail({
           onClick={() => setTab("checklist")}
           className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
         >
-          Checks ({checklistEntries.length - checklistDoneCount} left)
-        </button>
-        <button
-          onClick={() => setTab("variations")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "variations" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Variations ({variations.length})
-        </button>
-        <button
-          onClick={() => setTab("materials")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "materials" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Materials ({materials.length})
-        </button>
-        <button
-          onClick={() => setTab("tasks")}
-          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "tasks" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-        >
-          Tasks ({designTasks.length})
+          Checks
         </button>
         <button
           onClick={() => setTab("activity")}
@@ -988,7 +971,31 @@ function JobDesignDetail({
         >
           Release
         </button>
+        <button
+          onClick={() => setShowMoreTools((open) => !open)}
+          className={`px-4 py-2 font-medium whitespace-nowrap ${showMoreTools ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          More
+        </button>
       </div>
+
+      {showMoreTools && (
+        <div className="flex gap-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+          {([
+            ["variations", `Variations (${variations.length})`],
+            ["materials", `Materials (${materials.length})`],
+            ["tasks", `Tasks (${designTasks.length})`],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${tab === key ? "bg-ink-900 text-white" : "bg-white text-gray-600"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === "stages" && (
         <div className="space-y-2">
@@ -1415,6 +1422,27 @@ function JobDesignDetail({
 
       {tab === "release" && (
         <div className="space-y-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-blue-900">Production material list</p>
+                <p className="mt-1 text-xs text-blue-700">This list is carried into Production for the floor team to follow.</p>
+              </div>
+              <button type="button" onClick={() => { setShowMoreTools(true); setTab("materials"); }} className="shrink-0 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-800 shadow-sm">Edit list</button>
+            </div>
+            {materials.length === 0 ? (
+              <p className="mt-3 text-sm text-blue-800">No material lines added yet.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {materials.map((material) => (
+                  <div key={material.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm">
+                    <span className="min-w-0 truncate text-gray-800">{material.description}</span>
+                    <span className="shrink-0 font-semibold text-gray-900">{material.quantity} {material.unit || ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {isReleased ? (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <p className="text-sm font-semibold text-green-900">Released to Production</p>
