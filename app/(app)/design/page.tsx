@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 
@@ -50,11 +50,47 @@ interface MaterialLine {
   category: string;
   description: string;
   brand?: string;
+  productCode?: string;
+  length?: number;
+  width?: number;
+  thickness?: string;
   quantity: number;
+  requiredQty?: number;
   unit?: string;
   supplier?: string;
   orderStatus: string;
+  materialStatus?: string;
+  materialSource?: string;
+  stockItemId?: string;
+  linked_stock_item_id?: string;
+  bucket?: string;
+  available?: number;
+  shortfall?: number;
+  offcuts?: OffcutSuggestion[];
   notes?: string;
+}
+
+interface StockOption {
+  id: string;
+  name: string;
+  stockType?: string;
+  category?: string;
+  unit?: string;
+  on_hand_qty?: number;
+  allocated_qty?: number;
+  supplier?: string;
+  productCode?: string;
+  thickness?: string;
+}
+
+interface OffcutSuggestion {
+  id: string;
+  offcutId?: string;
+  length?: number;
+  width?: number;
+  thickness?: string;
+  quantity?: number;
+  storageLocation?: string;
 }
 
 interface DesignTask {
@@ -173,6 +209,7 @@ const CHECKLIST_ITEMS = [
 // must mirror the backend's TOP_ROLES exactly (server.py), since the API
 // itself will 403 an override attempt from anyone outside this set.
 const TOP_ROLES = ["managing_director", "manager", "admin"];
+const MATERIAL_GROUPS = ["Sheets", "Hardware", "Other", "Offcuts"];
 
 // Human-readable labels for activity_log "action" strings. Anything not
 // listed here falls back to a generic "prev → new" rendering.
@@ -569,15 +606,29 @@ function JobDesignDetail({
   const [catalog, setCatalog] = useState<{ categories: string[]; orderStatuses: string[] }>({
     categories: [], orderStatuses: [],
   });
+  const [stockItems, setStockItems] = useState<StockOption[]>([]);
   const [showMatForm, setShowMatForm] = useState(false);
-  const [matCategory, setMatCategory] = useState("");
+  const [matCategory, setMatCategory] = useState("Sheets");
+  const [matStockItemId, setMatStockItemId] = useState("");
   const [matDesc, setMatDesc] = useState("");
   const [matQty, setMatQty] = useState(1);
-  const [matUnit, setMatUnit] = useState("units");
+  const [matUnit, setMatUnit] = useState("pcs");
+  const [matLength, setMatLength] = useState("");
+  const [matWidth, setMatWidth] = useState("");
   const [matSupplier, setMatSupplier] = useState("");
   const [matSaving, setMatSaving] = useState(false);
   const [matError, setMatError] = useState<string | null>(null);
   const [matStatusSaving, setMatStatusSaving] = useState<string | null>(null);
+
+  const filteredStockItems = useMemo(() => {
+    const type = matCategory === "Sheets" ? "sheet" : matCategory === "Hardware" ? "hardware" : "";
+    return stockItems.filter((item) => !type || item.stockType === type);
+  }, [matCategory, stockItems]);
+
+  const selectedStockItem = useMemo(
+    () => stockItems.find((item) => item.id === matStockItemId),
+    [matStockItemId, stockItems]
+  );
 
   // Tasks
   const [designTasks, setDesignTasks] = useState<DesignTask[]>([]);
@@ -646,13 +697,14 @@ function JobDesignDetail({
     setMaterialsLoading(true);
     setMaterialsError(null);
     try {
-      const [mats, cat] = await Promise.all([
+      const [mats, cat, stock] = await Promise.all([
         api.get<MaterialLine[]>(`/design/jobs/${job.id}/materials`),
         api.get<{ categories: string[]; orderStatuses: string[] }>("/design/catalog"),
+        api.get<StockOption[]>("/stock/items?active=true"),
       ]);
       setMaterials(mats || []);
       setCatalog({ categories: cat.categories || [], orderStatuses: cat.orderStatuses || [] });
-      if ((cat.categories || []).length) setMatCategory(cat.categories[0]);
+      setStockItems(stock || []);
     } catch (err) {
       setMaterialsError("Couldn't load materials for this job.");
     } finally {
@@ -769,14 +821,27 @@ function JobDesignDetail({
         category: matCategory,
         description: matDesc,
         quantity: matQty,
+        requiredQty: matQty,
+        qty: matQty,
         unit: matUnit,
         supplier: matSupplier,
+        stockItemId: matStockItemId,
+        linked_stock_item_id: matStockItemId,
+        productCode: selectedStockItem?.productCode || "",
+        thickness: selectedStockItem?.thickness || "",
+        length: matLength ? Number(matLength) : null,
+        width: matWidth ? Number(matWidth) : null,
       });
       setMatDesc("");
+      setMatStockItemId("");
       setMatQty(1);
+      setMatUnit("pcs");
+      setMatLength("");
+      setMatWidth("");
       setMatSupplier("");
       setShowMatForm(false);
       loadMaterialsAndCatalog();
+      loadReleaseCheck();
     } catch (err) {
       setMatError("Couldn't save this material line — it was not recorded. Check your connection and try again.");
     } finally {
@@ -946,51 +1011,51 @@ function JobDesignDetail({
         </div>
       </div>
 
-<div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
-  <button
-    onClick={() => setTab("stages")}
-    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "stages" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-  >
-    Workflow
-  </button>
-  <button
-    onClick={() => setTab("checklist")}
-    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-  >
-    Checks
-  </button>
-  <button
-    onClick={() => setTab("release")}
-    className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "release" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-  >
-    Release
-  </button>
-  <button
-    onClick={() => setShowMoreTools((open) => !open)}
-    className={`px-4 py-2 font-medium whitespace-nowrap ${showMoreTools ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
-  >
-    More
-  </button>
-</div>
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+        <button
+          onClick={() => setTab("stages")}
+          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "stages" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          Workflow
+        </button>
+        <button
+          onClick={() => setTab("checklist")}
+          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "checklist" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          Checks
+        </button>
+        <button
+          onClick={() => setTab("release")}
+          className={`px-4 py-2 font-medium whitespace-nowrap ${tab === "release" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          Release
+        </button>
+        <button
+          onClick={() => setShowMoreTools((open) => !open)}
+          className={`px-4 py-2 font-medium whitespace-nowrap ${showMoreTools ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          More
+        </button>
+      </div>
 
-{showMoreTools && (
-  <div className="flex gap-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
-    {([
-      ["variations", `Variations (${variations.length})`],
-      ["materials", `Materials (${materials.length})`],
-      ["tasks", `Tasks (${designTasks.length})`],
-      ["activity", "Activity"],
-    ] as const).map(([key, label]) => (
-      <button
-        key={key}
-        onClick={() => setTab(key)}
-        className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${tab === key ? "bg-ink-900 text-white" : "bg-white text-gray-600"}`}
-      >
-        {label}
-      </button>
-    ))}
-  </div>
-)}
+      {showMoreTools && (
+        <div className="flex gap-2 overflow-x-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+          {([
+            ["variations", `Variations (${variations.length})`],
+            ["materials", `Materials (${materials.length})`],
+            ["tasks", `Tasks (${designTasks.length})`],
+            ["activity", "Activity"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap ${tab === key ? "bg-ink-900 text-white" : "bg-white text-gray-600"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === "stages" && (
         <div className="space-y-2">
@@ -1174,19 +1239,53 @@ function JobDesignDetail({
           {showMatForm && (
             <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
               <div>
-                <label className="text-xs text-gray-500">Category</label>
+                <label className="text-xs text-gray-500">Type</label>
                 <select
                   value={matCategory}
-                  onChange={(e) => setMatCategory(e.target.value)}
+                  onChange={(e) => {
+                    setMatCategory(e.target.value);
+                    setMatStockItemId("");
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 >
-                  {catalog.categories.map((c) => (
+                  {MATERIAL_GROUPS.map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="text-xs text-gray-500">Inventory item</label>
+                <select
+                  value={matStockItemId}
+                  onChange={(e) => {
+                    const item = stockItems.find((s) => s.id === e.target.value);
+                    setMatStockItemId(e.target.value);
+                    if (item) {
+                      setMatDesc(item.name);
+                      setMatUnit(item.unit || "pcs");
+                      setMatSupplier(item.supplier || "");
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Not in inventory / manual entry</option>
+                  {filteredStockItems.map((item) => {
+                    const available = Number(item.on_hand_qty || 0) - Number(item.allocated_qty || 0);
+                    return (
+                      <option key={item.id} value={item.id}>
+                        {item.name} ({available} {item.unit || ""} available)
+                      </option>
+                    );
+                  })}
+                </select>
+                {selectedStockItem && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Available now: {Number(selectedStockItem.on_hand_qty || 0) - Number(selectedStockItem.allocated_qty || 0)} {selectedStockItem.unit || ""}
+                  </p>
+                )}
+              </div>
               <textarea
-                placeholder="Describe the material (e.g. 18mm White Laminex carcass board)"
+                placeholder="Describe material, hardware, or offcut requirement"
                 value={matDesc}
                 onChange={(e) => setMatDesc(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg resize-none"
@@ -1212,6 +1311,28 @@ function JobDesignDetail({
                   />
                 </div>
               </div>
+              {(matCategory === "Sheets" || matCategory === "Offcuts") && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-gray-500">Length mm</label>
+                    <input
+                      type="number"
+                      value={matLength}
+                      onChange={(e) => setMatLength(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">Width mm</label>
+                    <input
+                      type="number"
+                      value={matWidth}
+                      onChange={(e) => setMatWidth(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-gray-500">Supplier (optional)</label>
                 <input
@@ -1246,8 +1367,36 @@ function JobDesignDetail({
                       <span className="text-xs text-gray-400">{m.category}</span>
                       <p className="text-sm text-gray-900">{m.description}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {m.quantity} {m.unit}{m.supplier ? ` · ${m.supplier}` : ""}
+                        {m.requiredQty ?? m.quantity} {m.unit}{m.supplier ? ` · ${m.supplier}` : ""}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          m.materialStatus === "Needs to be Purchased"
+                            ? "bg-red-100 text-red-700"
+                            : m.materialStatus === "Offcut Available"
+                              ? "bg-blue-100 text-blue-700"
+                              : m.materialStatus === "Available in Workshop"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-gray-100 text-gray-600"
+                        }`}>
+                          {m.materialStatus || "Required"}
+                        </span>
+                        {typeof m.available === "number" && (
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                            Available: {m.available} {m.unit || ""}
+                          </span>
+                        )}
+                        {typeof m.shortfall === "number" && m.shortfall > 0 && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                            Short: {m.shortfall} {m.unit || ""}
+                          </span>
+                        )}
+                      </div>
+                      {!!m.offcuts?.length && (
+                        <p className="mt-1 text-xs text-blue-700">
+                          Offcut option: {m.offcuts[0].offcutId || "available"} {m.offcuts[0].length}x{m.offcuts[0].width}
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={() => deleteMaterial(m.id)}
