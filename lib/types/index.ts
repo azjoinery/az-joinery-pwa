@@ -93,7 +93,6 @@ export interface DailyEntry {
   counts: Record<string, number>;
   jobCounts?: Record<string, number>;
   note: string;
-  jobCounts?: Record<string, number>;
   materials?: EntryMaterial[];
   createdAt: string;
   updatedAt: string;
