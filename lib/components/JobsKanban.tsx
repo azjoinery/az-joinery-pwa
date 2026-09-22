@@ -179,6 +179,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [assigningJob, setAssigningJob] = useState<BoardJob | null>(null);
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
   const [blockingJob, setBlockingJob] = useState<BoardJob | null>(null);
+  const [viewingJob, setViewingJob] = useState<BoardJob | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
   const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
@@ -435,6 +436,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
 
         {canManage && (
           <div className="mt-2 grid grid-cols-3 gap-2">
+            <button className="btn-secondary btn-sm col-span-3" disabled={busy} onClick={() => setViewingJob(job)}>Open job details</button>
             <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openAssignment(job)}>Assign</button>
             <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openEdit(job)}>Edit</button>
             {job.blocked ? (
@@ -566,6 +568,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
                       <td><span className={`badge ${job.priority === "High" ? "badge-danger" : job.priority === "Low" ? "badge-neutral" : "badge-info"}`}>{job.priority}</span></td>
                       <td>{canManage && (
                         <div className="flex gap-1.5">
+                          <button className="btn-secondary btn-sm" onClick={() => setViewingJob(job)}>Open</button>
                           <button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button>
                           <button className="btn-secondary btn-sm" onClick={() => openEdit(job)}>Edit</button>
                         </div>
@@ -577,6 +580,27 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
             </table>
           </div>
         </div>
+      )}
+
+      {viewingJob && (
+        <Modal title={`${viewingJob.ref} · ${viewingJob.client}`} onClose={() => setViewingJob(null)}>
+          <div className="flex flex-col gap-4 text-sm">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">Project</p>
+              <p className="mt-1 font-semibold text-ink-900">{viewingJob.project}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Stage</p><p className="mt-1 font-semibold text-ink-900">{viewingJob.stage}</p></div>
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Next action</p><p className="mt-1 font-semibold text-brand-orange-dark">{nextActionFor(viewingJob, stages)}</p></div>
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Assigned to</p><p className="mt-1 font-semibold text-ink-900">{viewingJob.assignedTo?.name || "Unassigned"}</p></div>
+              <div className="rounded-lg bg-ink-50 p-3"><p className="text-xs text-ink-500">Due</p><p className="mt-1 font-semibold text-ink-900">{dueInfo(viewingJob.dueDate)?.label || "No due date"}</p></div>
+            </div>
+            {viewingJob.phone && <p><span className="font-semibold text-ink-700">Phone:</span> {viewingJob.phone}</p>}
+            {viewingJob.siteAddress && <p><span className="font-semibold text-ink-700">Site:</span> {viewingJob.siteAddress}</p>}
+            {viewingJob.notes && <div><p className="font-semibold text-ink-700">Notes</p><p className="mt-1 whitespace-pre-wrap text-ink-600">{viewingJob.notes}</p></div>}
+            {canManage && <button className="btn-primary w-full" onClick={() => { setViewingJob(null); openEdit(viewingJob); }}>Edit this job</button>}
+          </div>
+        </Modal>
       )}
 
       {canManage && assigningJob && (
