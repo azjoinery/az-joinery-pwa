@@ -30,6 +30,7 @@ interface RawJob {
   productionProgress?: number;
   releaseStatus?: string;
   releasedAt?: string;
+  materialReadiness?: "ready" | "pending" | "not_required";
   blocked?: boolean;
   blockedReason?: string;
 }
@@ -58,6 +59,7 @@ interface BoardJob {
   blockedReason?: string;
   completed: boolean;
   productionReady: boolean;
+  materialReadiness: "ready" | "pending" | "not_required";
 }
 
 interface EditJobForm {
@@ -95,6 +97,7 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
   const productionReady = raw.releaseStatus
     ? raw.releaseStatus === "Released"
     : /ready for production|in production|production|completed|delivered|done/.test(statusText);
+  const materialReadiness = raw.materialReadiness || "not_required";
   const blocked = Boolean(raw.blocked) || statusText.includes("blocked");
   const completed = Number(raw.productionProgress || 0) >= 100 || /completed|delivered|done/.test(statusText);
   const assignedWorker = workers.find(worker =>
@@ -122,7 +125,8 @@ function normaliseJob(raw: RawJob, stages: StageDefinition[], workers: RawWorker
     blocked,
     blockedReason: raw.blockedReason || undefined,
     completed,
-    productionReady,
+    productionReady: productionReady && materialReadiness !== "pending",
+    materialReadiness,
   };
 }
 
@@ -137,6 +141,7 @@ function dueInfo(value?: string) {
 }
 
 function nextActionFor(job: BoardJob, stages: StageDefinition[]) {
+  if (job.materialReadiness === "pending") return "Complete material check";
   if (!job.productionReady) return "Waiting for design release";
   if (job.blocked) return "Resolve blocker";
   if (job.completed) return "Ready for delivery";
@@ -202,9 +207,10 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
       setLoading(true);
       setError("");
       try {
-        const [rawJobs, rawWorkers] = await Promise.all([
+        const [rawJobs, rawWorkers, readiness] = await Promise.all([
           api.get<RawJob[]>("/jobs"),
           canManage ? api.get<RawWorker[]>("/users") : Promise.resolve([] as RawWorker[]),
+          api.get<Array<{ jobId: string; status: "ready" | "pending"; ready: boolean }>>("/jobs/production-readiness").catch(() => []),
         ]);
 
         let productionStages = DEFAULT_STAGES;
@@ -220,7 +226,11 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
         );
         setStages(productionStages);
         setWorkers(activeWorkers);
-        setJobs(rawJobs.map(job => normaliseJob(job, productionStages, activeWorkers)));
+        const readinessByJob = new Map(readiness.map(item => [item.jobId, item.status]));
+        setJobs(rawJobs.map(job => normaliseJob({
+          ...job,
+          materialReadiness: readinessByJob.get(job.id) || "not_required",
+        }, productionStages, activeWorkers)));
       } catch {
         setError("Jobs could not be loaded. Check that the Render API is running and NEXT_PUBLIC_API_URL is correct in Vercel.");
       } finally {
