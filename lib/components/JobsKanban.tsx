@@ -68,6 +68,24 @@ interface BoardJob {
   invoiceStatus: string;
 }
 
+interface ProductionMaterialLine {
+  id: string;
+  description?: string;
+  quantity?: number;
+  requiredQty?: number;
+  unit?: string;
+  materialStatus?: string;
+  notes?: string;
+}
+
+interface ProductionMaterialDraft {
+  id: string;
+  description: string;
+  requiredQty: number;
+  unit: string;
+  notes: string;
+}
+
 interface EditJobForm {
   client: string;
   projectName: string;
@@ -203,6 +221,12 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [blockingJob, setBlockingJob] = useState<BoardJob | null>(null);
   const [viewingJob, setViewingJob] = useState<BoardJob | null>(null);
   const [deletingJob, setDeletingJob] = useState<BoardJob | null>(null);
+  const [viewingMaterials, setViewingMaterials] = useState<ProductionMaterialLine[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [editingMaterials, setEditingMaterials] = useState(false);
+  const [materialDrafts, setMaterialDrafts] = useState<ProductionMaterialDraft[]>([]);
+  const [materialEditNote, setMaterialEditNote] = useState("");
+  const [materialSaving, setMaterialSaving] = useState(false);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
   const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
@@ -210,6 +234,20 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
     client: "", projectName: "", phone: "", siteAddress: "",
     dueDate: "", priority: "Normal", notes: "",
   });
+
+  useEffect(() => {
+    if (!viewingJob) {
+      setViewingMaterials([]);
+      return;
+    }
+    let mounted = true;
+    setMaterialsLoading(true);
+    api.get<ProductionMaterialLine[]>(`/jobs/${viewingJob.id}/materials`)
+      .then(rows => { if (mounted) setViewingMaterials(rows || []); })
+      .catch(() => { if (mounted) setViewingMaterials([]); })
+      .finally(() => { if (mounted) setMaterialsLoading(false); });
+    return () => { mounted = false; };
+  }, [viewingJob]);
 
   useEffect(() => {
     (async () => {
@@ -368,6 +406,40 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
     }
   };
 
+  const openMaterialEditor = () => {
+    setMaterialDrafts(viewingMaterials.map(material => ({
+      id: material.id,
+      description: material.description || "Material",
+      requiredQty: Number(material.requiredQty ?? material.quantity ?? 0),
+      unit: material.unit || "",
+      notes: material.notes || "",
+    })));
+    setMaterialEditNote("");
+    setEditingMaterials(true);
+  };
+
+  const saveMaterialEditor = async () => {
+    if (!viewingJob || !materialEditNote.trim()) return;
+    setMaterialSaving(true);
+    setError("");
+    try {
+      for (const material of materialDrafts) {
+        await api.patch(`/job-materials/${material.id}`, {
+          requiredQty: material.requiredQty,
+          notes: material.notes,
+          postReleaseNote: materialEditNote.trim(),
+        });
+      }
+      const refreshed = await api.get<ProductionMaterialLine[]>(`/jobs/${viewingJob.id}/materials`);
+      setViewingMaterials(refreshed || []);
+      setEditingMaterials(false);
+    } catch {
+      setError("Could not save the material change. Add a reason and try again.");
+    } finally {
+      setMaterialSaving(false);
+    }
+  };
+
   const openAssignment = (job: BoardJob) => {
     if (!canManage) return;
     setAssigningJob(job);
@@ -477,9 +549,10 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
           {stages.map(stage => <option key={stage.name} value={stage.name}>{stage.name}</option>)}
         </select>
 
+        <button className="btn-secondary btn-sm mb-2 w-full" disabled={busy} onClick={() => setViewingJob(job)}>Open job details</button>
+
         {canManage && (
           <div className="mt-2 grid grid-cols-3 gap-2">
-            <button className="btn-secondary btn-sm col-span-3" disabled={busy} onClick={() => setViewingJob(job)}>Open job details</button>
             <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openAssignment(job)}>Assign</button>
             <button className="btn-secondary btn-sm" disabled={busy} onClick={() => openEdit(job)}>Edit</button>
             {job.blocked ? (
@@ -610,14 +683,16 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
                       <td>{job.assignedTo?.name || <span className="italic text-ink-400">Unassigned</span>}</td>
                       <td>{due?.label || "—"}</td>
                       <td><span className={`badge ${job.priority === "High" ? "badge-danger" : job.priority === "Low" ? "badge-neutral" : "badge-info"}`}>{job.priority}</span></td>
-                      <td>{canManage && (
+                      <td>
                         <div className="flex gap-1.5">
                           <button className="btn-secondary btn-sm" onClick={() => setViewingJob(job)}>Open</button>
-                          <button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button>
-                          <button className="btn-secondary btn-sm" onClick={() => openEdit(job)}>Edit</button>
-                          <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" onClick={() => setDeletingJob(job)}>Delete</button>
+                          {canManage && <>
+                            <button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button>
+                            <button className="btn-secondary btn-sm" onClick={() => openEdit(job)}>Edit</button>
+                            <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" onClick={() => setDeletingJob(job)}>Delete</button>
+                          </>}
                         </div>
-                      )}</td>
+                      </td>
                     </tr>
                   );
                 })}
@@ -645,7 +720,44 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
             {viewingJob.phone && <p><span className="font-semibold text-ink-700">Phone:</span> {viewingJob.phone}</p>}
             {viewingJob.siteAddress && <p><span className="font-semibold text-ink-700">Site:</span> {viewingJob.siteAddress}</p>}
             {viewingJob.notes && <div><p className="font-semibold text-ink-700">Notes</p><p className="mt-1 whitespace-pre-wrap text-ink-600">{viewingJob.notes}</p></div>}
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-semibold text-ink-700">Required materials</p>
+                <span className="text-xs text-ink-500">Read-only production list</span>
+              </div>
+              {materialsLoading ? <p className="mt-2 text-ink-500">Loading materials…</p> : viewingMaterials.length === 0 ? <p className="mt-2 text-ink-500">No required materials listed.</p> : (
+                <div className="mt-2 space-y-2">
+                  {viewingMaterials.map(material => (
+                    <div key={material.id} className="flex items-center justify-between gap-3 rounded-lg bg-ink-50 px-3 py-2">
+                      <div className="min-w-0"><p className="truncate font-medium text-ink-800">{material.description || "Material"}</p>{material.notes && <p className="truncate text-xs text-ink-500">{material.notes}</p>}</div>
+                      <span className="shrink-0 font-semibold text-ink-900">{material.requiredQty ?? material.quantity ?? 0} {material.unit || ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {canManage && viewingMaterials.length > 0 && <button className="btn-secondary btn-sm mt-3 w-full" onClick={openMaterialEditor}>Edit required quantities / notes</button>}
+            </div>
             {canManage && <button className="btn-primary w-full" onClick={() => { setViewingJob(null); openEdit(viewingJob); }}>Edit this job</button>}
+          </div>
+        </Modal>
+      )}
+
+      {canManage && editingMaterials && (
+        <Modal title="Edit required materials" onClose={() => setEditingMaterials(false)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-ink-600">This job is released. Every change needs a reason and is recorded in Activity.</p>
+            {materialDrafts.map((material, index) => (
+              <div key={material.id} className="rounded-xl border border-ink-200 p-3">
+                <p className="text-sm font-semibold text-ink-900">{material.description}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <input type="number" min="0" className="input" value={material.requiredQty} onChange={event => setMaterialDrafts(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, requiredQty: Math.max(0, Number(event.target.value)) } : item))} />
+                  <span className="text-sm text-ink-500">{material.unit}</span>
+                </div>
+                <textarea className="input mt-2 min-h-16 resize-y" placeholder="Material note" value={material.notes} onChange={event => setMaterialDrafts(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, notes: event.target.value } : item))} />
+              </div>
+            ))}
+            <textarea className="input min-h-20 resize-y" placeholder="Why is this material quantity or note changing? *" value={materialEditNote} onChange={event => setMaterialEditNote(event.target.value)} />
+            <button className="btn-primary w-full" disabled={!materialEditNote.trim() || materialSaving} onClick={saveMaterialEditor}>{materialSaving ? "Saving…" : "Save material change"}</button>
           </div>
         </Modal>
       )}
