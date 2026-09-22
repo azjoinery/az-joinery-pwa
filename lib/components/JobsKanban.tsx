@@ -180,6 +180,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [selectedWorkerId, setSelectedWorkerId] = useState("");
   const [blockingJob, setBlockingJob] = useState<BoardJob | null>(null);
   const [viewingJob, setViewingJob] = useState<BoardJob | null>(null);
+  const [deletingJob, setDeletingJob] = useState<BoardJob | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
   const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
@@ -325,6 +326,21 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
     }
   };
 
+  const deleteJob = async () => {
+    if (!canManage || !deletingJob) return;
+    setSavingId(deletingJob.id);
+    setError("");
+    try {
+      await api.delete(`/jobs/${deletingJob.id}`);
+      setJobs(current => current.filter(job => job.id !== deletingJob.id));
+      setDeletingJob(null);
+    } catch {
+      setError(`Could not delete ${deletingJob.ref}. No change was saved.`);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const openAssignment = (job: BoardJob) => {
     if (!canManage) return;
     setAssigningJob(job);
@@ -444,6 +460,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
             ) : !job.completed ? (
               <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" disabled={busy} onClick={() => setBlockingJob(job)}>Block</button>
             ) : <span />}
+            <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" disabled={busy} onClick={() => setDeletingJob(job)}>Delete</button>
           </div>
         )}
       </article>
@@ -571,6 +588,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
                           <button className="btn-secondary btn-sm" onClick={() => setViewingJob(job)}>Open</button>
                           <button className="btn-secondary btn-sm" onClick={() => openAssignment(job)}>Assign</button>
                           <button className="btn-secondary btn-sm" onClick={() => openEdit(job)}>Edit</button>
+                          <button className="btn-sm border border-danger/40 text-danger hover:bg-danger-light" onClick={() => setDeletingJob(job)}>Delete</button>
                         </div>
                       )}</td>
                     </tr>
@@ -599,6 +617,18 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
             {viewingJob.siteAddress && <p><span className="font-semibold text-ink-700">Site:</span> {viewingJob.siteAddress}</p>}
             {viewingJob.notes && <div><p className="font-semibold text-ink-700">Notes</p><p className="mt-1 whitespace-pre-wrap text-ink-600">{viewingJob.notes}</p></div>}
             {canManage && <button className="btn-primary w-full" onClick={() => { setViewingJob(null); openEdit(viewingJob); }}>Edit this job</button>}
+          </div>
+        </Modal>
+      )}
+
+      {canManage && deletingJob && (
+        <Modal title={`Delete ${deletingJob.ref}?`} onClose={() => setDeletingJob(null)}>
+          <div className="flex flex-col gap-4 text-sm">
+            <p className="text-ink-600">This removes <span className="font-semibold text-ink-900">{deletingJob.client} · {deletingJob.project}</span> from the Jobs board. Use this only for a duplicate or incorrect job.</p>
+            <div className="flex gap-2">
+              <button className="btn-secondary flex-1" onClick={() => setDeletingJob(null)}>Cancel</button>
+              <button className="btn-danger flex-1" disabled={savingId === deletingJob.id} onClick={deleteJob}>Delete job</button>
+            </div>
           </div>
         </Modal>
       )}
