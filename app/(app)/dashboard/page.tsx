@@ -439,12 +439,13 @@ function ExecutiveOverview() {
             detail={`${quotesSent ?? "—"} quotes sent`}
           />
           <FlowCard
-            href="/jobs"
-            icon="design"
-            title="Design"
-            main={designInProgress != null ? String(designInProgress) : "—"}
-            mainLabel="in progress"
-            detail={`${designReady ?? "—"} ready to release`}
+  href="/design"
+  icon="design"
+  title="Design"
+  main={designInProgress != null ? String(designInProgress) : "—"}
+  mainLabel="in progress"
+  detail={`${designReady ?? "—"} ready to release`}
+/>
           />
           <FlowCard
             href="/jobs"
@@ -482,10 +483,10 @@ function ExecutiveOverview() {
         <SectionHeading>Management rhythm</SectionHeading>
         <div className="grid gap-3 md:grid-cols-3">
           <RhythmLink
-            href="/jobs"
-            icon="jobs"
-            title="Morning job check"
-            text="Open Jobs, check blocked work, then decide who owns the next action."
+           href="/design"
+           icon="jobs"
+          title="Morning design check"
+          text="Review design work, release-ready jobs, and anything blocked before production starts."
           />
           <RhythmLink
             href="/materials"
