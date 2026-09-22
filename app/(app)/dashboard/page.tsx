@@ -269,16 +269,16 @@ function ExecutiveOverview() {
                   className="-mx-1 flex items-center gap-3 rounded-lg px-1 py-1 transition-colors hover:bg-ink-50"
                 >
                   <span
-                    className="h-2 w-2 shrink-0 rounded-full bg-brand-orange"
-                    style={{ opacity: s.count ? 1 : 0.3 }}
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: stageColor(s.key), opacity: s.count ? 1 : 0.35 }}
                   />
                   <span className="w-32 shrink-0 truncate text-sm text-ink-700 sm:w-40">{s.label}</span>
                   <span className="h-5 flex-1 overflow-hidden rounded bg-ink-100">
                     <span
-                      className="block h-full rounded bg-brand-orange"
+                      className="block h-full rounded"
                       style={{
                         width: `${s.count ? Math.max(6, (s.count / maxCount) * 100) : 0}%`,
-                        opacity: 0.85,
+                        background: stageColor(s.key),
                         transition: "width .35s ease",
                       }}
                     />
@@ -371,6 +371,22 @@ type MoneySummary = {
   overdueInvoices: number;
   monthlyRevenue?: number;
 };
+
+// Stage colours — a warm→green grade keyed to each stage's meaning:
+// early work is amber, "awaiting materials" flags red (office must act),
+// building runs through the brand orange, completion greens out.
+const STAGE_COLORS: Record<string, string> = {
+  in_design: "#FCD34D",          // amber — just starting
+  released: "#FBBF24",           // amber
+  awaiting_materials: "#EF4444", // red — needs purchasing
+  materials_ready: "#FB923C",    // light orange — ready to build
+  in_production: "#F5822A",      // brand orange — building
+  ready_to_deliver: "#84CC16",   // lime — nearly done
+  delivered: "#16A34A",          // green — done
+};
+function stageColor(key: string) {
+  return STAGE_COLORS[key] || "#F5822A";
+}
 
 function PipelineSkeleton() {
   return (
