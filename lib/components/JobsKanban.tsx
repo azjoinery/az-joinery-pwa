@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { format, isPast, parseISO } from "date-fns";
 import { api } from "@/lib/api/client";
 
@@ -227,6 +227,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
   const [materialDrafts, setMaterialDrafts] = useState<ProductionMaterialDraft[]>([]);
   const [materialEditNote, setMaterialEditNote] = useState("");
   const [materialSaving, setMaterialSaving] = useState(false);
+  const [checkingMaterialId, setCheckingMaterialId] = useState<string | null>(null);
   const [blockReason, setBlockReason] = useState("");
   const [blockDetail, setBlockDetail] = useState("");
   const [editingJob, setEditingJob] = useState<BoardJob | null>(null);
@@ -249,8 +250,7 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
     return () => { mounted = false; };
   }, [viewingJob]);
 
-  useEffect(() => {
-    (async () => {
+  const loadJobs = useCallback(async () => {
       setLoading(true);
       setError("");
       try {
@@ -283,8 +283,11 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
       } finally {
         setLoading(false);
       }
-    })();
   }, [canManage]);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
 
   const filteredJobs = jobs.filter(job => {
     const search = query.trim().toLowerCase();
@@ -440,6 +443,31 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
     }
   };
 
+  const runMaterialCheck = async (job: BoardJob) => {
+    if (!canManage || checkingMaterialId) return;
+    setCheckingMaterialId(job.id);
+    setError("");
+    try {
+      const result = await api.post<{ status: "ready" | "pending"; purchaseRequired?: number }>(`/jobs/${job.id}/materials/check`, {});
+      await loadJobs();
+      setViewingJob(current => current?.id === job.id
+        ? {
+            ...current,
+            materialReadiness: result.status,
+            productionReady: result.status === "ready" ? true : current.productionReady,
+          }
+        : current
+      );
+      if (result.status === "pending") {
+        setError(`${job.ref}: material check sent to purchasing. ${result.purchaseRequired || 0} item(s) need ordering.`);
+      }
+    } catch {
+      setError(`Could not complete the material check for ${job.ref}.`);
+    } finally {
+      setCheckingMaterialId(null);
+    }
+  };
+
   const openAssignment = (job: BoardJob) => {
     if (!canManage) return;
     setAssigningJob(job);
@@ -543,6 +571,16 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
           <span className="font-bold uppercase tracking-wide text-[10px]">Next</span>
           <span className="ml-1.5 font-semibold">{nextAction}</span>
         </div>
+
+        {canManage && job.materialReadiness === "pending" && (
+          <button
+            className="btn-primary btn-sm mt-2 w-full"
+            disabled={checkingMaterialId === job.id}
+            onClick={() => runMaterialCheck(job)}
+          >
+            {checkingMaterialId === job.id ? "Checking materials..." : "Run material check"}
+          </button>
+        )}
 
         <label className="mt-3 block text-[10px] font-bold uppercase tracking-wider text-ink-400">{canManage && job.productionReady ? "Move to stage" : "Current stage"}</label>
         <select className="input mt-1 py-1.5 text-xs" value={job.stage} disabled={!canManage || !job.productionReady || job.blocked || busy} onChange={event => moveJob(job, event.target.value)}>
@@ -725,6 +763,15 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
                 <p className="font-semibold text-ink-700">Required materials</p>
                 <span className="text-xs text-ink-500">Read-only production list</span>
               </div>
+              {canManage && viewingJob.materialReadiness === "pending" && (
+                <button
+                  className="btn-primary btn-sm mt-3 w-full"
+                  disabled={checkingMaterialId === viewingJob.id}
+                  onClick={() => runMaterialCheck(viewingJob)}
+                >
+                  {checkingMaterialId === viewingJob.id ? "Checking materials..." : "Run material check and notify purchasing"}
+                </button>
+              )}
               {materialsLoading ? <p className="mt-2 text-ink-500">Loading materials…</p> : viewingMaterials.length === 0 ? <p className="mt-2 text-ink-500">No required materials listed.</p> : (
                 <div className="mt-2 space-y-2">
                   {viewingMaterials.map(material => (
