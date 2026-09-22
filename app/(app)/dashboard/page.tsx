@@ -324,22 +324,22 @@ function ExecutiveOverview() {
   return (
     <div className="page">
       <WorkshopHero
-        eyebrow="Business snapshot"
+        eyebrow="MD command centre"
         title={`Welcome, ${user?.name?.split(" ")[0] ?? ""}`}
-        subtitle="Where the workshop stands right now."
+        subtitle="Check what needs attention, then move the business through Jobs."
       >
         <div className="mt-6 grid grid-cols-2 gap-5 border-t border-white/15 pt-5 md:grid-cols-4">
           <HeroFigure
-            label="Confirmed sales"
-            value={currency(confirmedSales)}
-            subtitle="Won leads value"
+            label="Needs attention"
+            value={String(alerts.length)}
+            subtitle="Open exceptions"
             primary
           />
-          <HeroFigure label="Outstanding" value={currency(outstanding)} />
           <HeroFigure
             label="Active jobs"
             value={activeJobs != null ? String(activeJobs) : "—"}
           />
+          <HeroFigure label="Outstanding" value={currency(outstanding)} />
           <HeroFigure
             label="Weekly output"
             value={weeklyOutput != null ? String(weeklyOutput) : "—"}
@@ -418,48 +418,87 @@ function ExecutiveOverview() {
         )}
       </section>
 
-      {/* ---- Departments ---- */}
+      {/* ---- Job flow ---- */}
       <section className="mb-7">
-        <SectionHeading>Departments</SectionHeading>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatTile
-            icon="sales"
-            label="Active leads"
-            value={activeLeads}
+        <SectionHeading
+          action={
+            <Link href="/jobs" className="text-sm font-semibold text-brand-orange-dark">
+              Open Jobs
+            </Link>
+          }
+        >
+          Job flow
+        </SectionHeading>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <FlowCard
             href="/sales"
+            icon="sales"
+            title="Sales"
+            main={activeLeads != null ? String(activeLeads) : "—"}
+            mainLabel="active leads"
+            detail={`${quotesSent ?? "—"} quotes sent`}
           />
-          <StatTile
+          <FlowCard
+            href="/jobs"
             icon="design"
-            label="Design in progress"
-            value={designInProgress}
-            href="/design"
+            title="Design"
+            main={designInProgress != null ? String(designInProgress) : "—"}
+            mainLabel="in progress"
+            detail={`${designReady ?? "—"} ready to release`}
           />
-          <StatTile
-            icon="check"
-            label="Ready to release"
-            value={designReady}
-            href="/design"
+          <FlowCard
+            href="/jobs"
+            icon="jobs"
+            title="Production"
+            main={activeJobs != null ? String(activeJobs) : "—"}
+            mainLabel="active jobs"
+            detail={`${weeklyOutput ?? "—"} logged this week`}
           />
-          <StatTile
-            icon="invoices"
-            label="Quotes sent"
-            value={quotesSent}
-            href="/invoices"
+          <FlowCard
+            href="/accounts"
+            icon="accounts"
+            title="Money"
+            main={currency(outstanding)}
+            mainLabel="outstanding"
+            detail={`${currency(confirmedSales)} confirmed sales`}
           />
         </div>
       </section>
 
       {/* ---- Quick actions ---- */}
-      <section>
+      <section className="mb-7">
         <SectionHeading>Quick actions</SectionHeading>
-        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-6">
           <QuickAction href="/jobs" icon="jobs" label="Jobs" />
-          <QuickAction href="/sales" icon="sales" label="Sales" />
-          <QuickAction href="/design" icon="design" label="Design" />
-          <QuickAction href="/inventory" icon="inventory" label="Stock" />
-          <QuickAction href="/invoices" icon="invoices" label="Invoices" />
-          <QuickAction href="/analytics" icon="analytics" label="Analytics" />
           <QuickAction href="/tasks" icon="tasks" label="Tasks" />
+          <QuickAction href="/materials" icon="inventory" label="Materials" />
+          <QuickAction href="/sales" icon="sales" label="Sales" />
+          <QuickAction href="/invoices" icon="invoices" label="Invoices" />
+          <QuickAction href="/analytics" icon="analytics" label="Reports" />
+        </div>
+      </section>
+
+      <section>
+        <SectionHeading>Management rhythm</SectionHeading>
+        <div className="grid gap-3 md:grid-cols-3">
+          <RhythmLink
+            href="/jobs"
+            icon="jobs"
+            title="Morning job check"
+            text="Open Jobs, check blocked work, then decide who owns the next action."
+          />
+          <RhythmLink
+            href="/materials"
+            icon="inventory"
+            title="Material check"
+            text="Review assigned material, usage, and low stock before work starts."
+          />
+          <RhythmLink
+            href="/accounts"
+            icon="dollar"
+            title="Money check"
+            text="Check deposits, progress claims, invoices, and outstanding payments."
+          />
         </div>
       </section>
 
@@ -470,6 +509,74 @@ function ExecutiveOverview() {
         </p>
       )}
     </div>
+  );
+}
+
+function FlowCard({
+  href,
+  icon,
+  title,
+  main,
+  mainLabel,
+  detail,
+}: {
+  href: string;
+  icon: IconName;
+  title: string;
+  main: string;
+  mainLabel: string;
+  detail: string;
+}) {
+  return (
+    <Link href={href} className="card-interactive group card-pad block">
+      <div className="flex items-start justify-between gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand-orange/10 text-brand-orange-dark">
+          <Icon name={icon} size={20} />
+        </span>
+        <Icon
+          name="chevronRight"
+          size={16}
+          className="mt-1 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+        />
+      </div>
+      <h3 className="mt-4 text-base">{title}</h3>
+      <div className="mt-3 flex items-end gap-2">
+        <span className="font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">
+          {main}
+        </span>
+        <span className="pb-1 text-xs font-medium text-ink-500">{mainLabel}</span>
+      </div>
+      <p className="mt-1 text-xs text-ink-500">{detail}</p>
+    </Link>
+  );
+}
+
+function RhythmLink({
+  href,
+  icon,
+  title,
+  text,
+}: {
+  href: string;
+  icon: IconName;
+  title: string;
+  text: string;
+}) {
+  return (
+    <Link href={href} className="card-interactive group flex gap-3 p-4">
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink-100 text-ink-600">
+        <Icon name={icon} size={18} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-ink-900">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-ink-500">{text}</span>
+      </span>
+      <Icon
+        name="chevronRight"
+        size={16}
+        className="mt-1 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+      />
+    </Link>
   );
 }
 
@@ -654,22 +761,13 @@ function FloorLogDashboard() {
     scheduleSave();
   };
   const setMaterialQty = (rowIdx: number, value: number) => {
-  setMaterials((prev) =>
-    prev.map((row, index) =>
-      index === rowIdx
-        ? { ...row, qty: Math.max(0, value || 0) }
-        : row
-    )
-  );
-
-  scheduleSave();
-};
-  const setCounterValue = (key: string, value: number) => {
-  setCounts((previous) => ({
-    ...previous,
-    [key]: Math.max(0, Math.round(value || 0)),
-  }));
-};
+    setMaterials((prev) => prev.map((row, index) =>
+      index === rowIdx ? { ...row, qty: Math.max(0, value || 0) } : row
+    ));
+    scheduleSave();
+  };
+  const setCounterValue = (key: string, value: number) =>
+    setCounts((prev) => ({ ...prev, [key]: Math.max(0, Math.round(value || 0)) }));
   const addMaterialFromCatalogue = (matId: string) => {
     const already = materials.findIndex(
       (m) => m.stockItemId === matId
@@ -743,6 +841,7 @@ function FloorLogDashboard() {
         </div>
       </WorkshopHero>
 
+      {false && <>
       {/* ============================================================
           Slice 6 — three sections. CNC + Hardware are live (deduct
           stock on tap). Assembly is a draft tally (saves on Submit).
@@ -834,23 +933,22 @@ function FloorLogDashboard() {
                             : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
                         </div>
                         {matsTab === "assigned" && (m.assignedQty || 0) > 0 && (
-  <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
-    Assigned target: {m.assignedQty} {stk?.unit || ""}
-    {m.assignedByName ? ` · by ${m.assignedByName}` : ""}
-  </div>
-)}
+                          <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
+                            Assigned target: {m.assignedQty} {stk?.unit || ""}{m.assignedByName ? ` · by ${m.assignedByName}` : ""}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
                         <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
                         <input
-  type="number"
-  min="0"
-  step="1"
-  value={m.qty || 0}
-  onChange={(e) => setMaterialQty(i, Number(e.target.value))}
-  className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
-  aria-label={`Quantity used for ${stk?.name || "material"}`}
-/>
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={m.qty || 0}
+                          onChange={(e) => setMaterialQty(i, Number(e.target.value))}
+                          className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
+                          aria-label={`Quantity used for ${stk?.name || "material"}`}
+                        />
                         <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
                       </div>
                     </div>
@@ -911,26 +1009,23 @@ function FloorLogDashboard() {
                             ? [job.jobNum, job.client || job.projectName].filter(Boolean).join(" · ")
                             : <>{stk?.unit || ""}{typeof stk?.on_hand_qty === "number" ? ` · ${stk.on_hand_qty} on hand` : ""}{low ? <span className="text-red-600 font-semibold"> · low</span> : null}</>}
                         </div>
-                      {matsTab === "assigned" && (m.assignedQty || 0) > 0 && (
-  <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
-    Assigned target: {m.assignedQty} {stk?.unit || ""}
-    {m.assignedByName ? ` · by ${m.assignedByName}` : ""}
-  </div>
-)}  
+                        {matsTab === "assigned" && (m.assignedQty || 0) > 0 && (
+                          <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
+                            Assigned target: {m.assignedQty} {stk?.unit || ""}{m.assignedByName ? ` · by ${m.assignedByName}` : ""}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
                         <button type="button" onClick={() => bumpMaterial(i, -1)} disabled={(m.qty || 0) <= 0} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm disabled:opacity-40" aria-label="one less">−</button>
                         <input
-  type="number"
-  min="0"
-  step="1"
-  value={m.qty || 0}
-  onChange={(event) =>
-    setMaterialQty(i, Number(event.target.value))
-  }
-  className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
-  aria-label={`Quantity used for ${stk?.name || "material"}`}
-/>
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={m.qty || 0}
+                          onChange={(e) => setMaterialQty(i, Number(e.target.value))}
+                          className="h-12 w-16 rounded-md border border-gray-200 bg-white text-center text-lg font-bold tabular-nums text-gray-900"
+                          aria-label={`Quantity used for ${stk?.name || "material"}`}
+                        />
                         <button type="button" onClick={() => bumpMaterial(i, 1)} className="grid h-12 w-12 place-items-center rounded-md bg-white text-2xl font-bold text-gray-700 shadow-sm" aria-label="one more">+</button>
                       </div>
                     </div>
@@ -950,6 +1045,8 @@ function FloorLogDashboard() {
           </section>
         );
       })()}
+
+      </>}
 
       {/* ================ Assembly (tally, not stock) ================ */}
       <section className="mb-6">
@@ -1095,16 +1192,16 @@ function Counter({
           </svg>
         </button>
         <input
-         type="number"
-         min="0"
-         step="1"
-         value={value}
-         onChange={(event) => onChange(Number(event.target.value))}
-         aria-label={`${label} quantity`}
-         className={`h-11 w-16 rounded-lg border border-ink-200 bg-white text-center font-heading text-xl font-semibold tabular-nums outline-none focus:border-brand-orange ${
-         value > 0 ? "text-brand-orange" : "text-ink-300"
-         }`}
-       />
+          type="number"
+          min="0"
+          step="1"
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+          aria-label={`${label} quantity`}
+          className={`h-11 w-16 rounded-lg border border-ink-200 bg-white text-center font-heading text-xl font-semibold tabular-nums outline-none focus:border-brand-orange ${
+            value > 0 ? "text-brand-orange" : "text-ink-300"
+          }`}
+        />
         <button
           onClick={onIncrement}
           aria-label={`Increase ${label}`}
