@@ -18,7 +18,7 @@
 
 import type { IconName } from "@/lib/components/Icon";
 
-export type NavGroup = "Workshop" | "Commercial" | "Business";
+export type NavGroup = "Workshop" | "Office" | "Business";
 
 export type Role =
   | "managing_director"
@@ -61,24 +61,24 @@ export const PAGES: Record<
   tasks:      { href: "/tasks",      label: "Tasks",      icon: "tasks",     group: "Workshop" },
   design:     { href: "/design",     label: "Design",     icon: "design",    group: "Workshop" },
   inventory:  { href: "/inventory",  label: "Inventory",  icon: "inventory", group: "Workshop" },
-  production: { href: "/production", label: "Production", icon: "wrench",     group: "Workshop" },
-  office:     { href: "/office",     label: "Purchasing", icon: "truck",     group: "Workshop" },
+  production: { href: "/production", label: "Queue",      icon: "wrench",     group: "Workshop" },
+  office:     { href: "/office",     label: "Office",     icon: "truck",     group: "Office" },
   materials:  { href: "/materials",  label: "Materials",  icon: "inventory", group: "Workshop" },
 
-  sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Commercial" },
-  invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Commercial" },
-  accounts:  { href: "/accounts",  label: "Accounts",  icon: "accounts",  group: "Commercial" },
-  analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Commercial" },
+  sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Office" },
+  invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Office" },
+  accounts:  { href: "/accounts",  label: "Accounts",  icon: "accounts",  group: "Office" },
+  analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Office" },
 
   team:      { href: "/team",      label: "Team",      icon: "team",      group: "Business" },
 };
 
-export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
+export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Office", "Business"];
 
-// Full-access page list, in nav display order within each group. "production"
-// and "office" (Purchasing) sit in the Workshop group with the other
-// operational pages; the Commercial/Business pages follow.
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "inventory", "production", "office", "materials", "sales", "analytics", "invoices", "accounts"];
+// Executive nav — consolidated to 6 pages. Inventory, Materials, Sales,
+// Invoices, Accounts and Analytics live as sub-tabs inside Production and
+// Office; they don't appear as separate sidebar items for executive roles.
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "production", "office"];
 
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
@@ -104,8 +104,9 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   // it's the queue they work from. Inventory follows for stock checks.
   office: ["office", "inventory", "invoices", "accounts", "dashboard"],
 
-  // Design module only — matches the original app (Design + Profile only).
-  drafter: ["design"],
+  // Design is their landing page; Jobs and Tasks give them visibility into
+  // what's been assigned to them without needing a separate briefing channel.
+  drafter: ["design", "jobs", "tasks"],
 
   // Floor workers — daily production log, their own tasks, and the build queue
   // so cabinet makers can see what to pick up without typing a URL.
