@@ -38,7 +38,7 @@ export type PageKey =
   | "jobs"
   | "tasks"
   | "inventory"
-  | "production"
+  | "queue"
   | "office"
   | "sales"
   | "analytics"
@@ -61,7 +61,7 @@ export const PAGES: Record<
   tasks:      { href: "/tasks",      label: "Tasks",      icon: "tasks",     group: "Workshop" },
   design:     { href: "/design",     label: "Design",     icon: "design",    group: "Workshop" },
   inventory:  { href: "/inventory",  label: "Inventory",  icon: "inventory", group: "Workshop" },
-  production: { href: "/production", label: "Queue",      icon: "wrench",     group: "Workshop" },
+  queue:      { href: "/queue",      label: "Queue",      icon: "wrench",     group: "Workshop" },
   office:     { href: "/office",     label: "Office",     icon: "truck",     group: "Office" },
   materials:  { href: "/materials",  label: "Materials",  icon: "inventory", group: "Workshop" },
 
@@ -78,7 +78,7 @@ export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Office", "Business"];
 // Executive nav — consolidated to 6 pages. Inventory, Materials, Sales,
 // Invoices, Accounts and Analytics live as sub-tabs inside Production and
 // Office; they don't appear as separate sidebar items for executive roles.
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "production", "office"];
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "queue", "office"];
 
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
@@ -98,7 +98,7 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
 
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
   // Production is their main screen, so it sits right after the daily basics.
-  supervisor: ["dashboard", "jobs", "tasks", "production", "inventory", "materials"],
+  supervisor: ["dashboard", "jobs", "tasks", "queue", "inventory", "materials"],
 
   // Materials/purchasing-facing role. Purchasing is their landing page —
   // it's the queue they work from. Inventory follows for stock checks.
@@ -110,9 +110,9 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
 
   // Floor workers — daily production log, their own tasks, and the build queue
   // so cabinet makers can see what to pick up without typing a URL.
-  cabinet_maker: ["dashboard", "tasks", "production", "materials"],
+  cabinet_maker: ["dashboard", "tasks", "queue", "materials"],
   installer: ["dashboard", "tasks"],
-  employee: ["dashboard", "tasks", "production", "materials"],
+  employee: ["dashboard", "tasks", "queue", "materials"],
   contractor: ["dashboard", "tasks"],
 };
 
