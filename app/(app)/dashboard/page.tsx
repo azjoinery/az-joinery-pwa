@@ -218,7 +218,7 @@ function ExecutiveOverview() {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile icon="jobs" label="Active jobs" value={totals?.activeJobs ?? null} href="/jobs" />
           <StatTile icon="inventory" label="Needs materials" value={totals?.officeJobs ?? null} href="/materials" />
-          <StatTile icon="wrench" label="In production" value={totals?.productionQueue ?? null} href="/production" />
+          <StatTile icon="wrench" label="In queue" value={totals?.productionQueue ?? null} href="/queue" />
           <StatTile icon="alert" label="Overdue" value={totals?.overdue ?? null} href="/jobs" />
         </div>
       </section>
@@ -799,7 +799,7 @@ function FloorLogDashboard() {
               return (
                 <a
                   key={job.id}
-                  href="/production"
+                  href="/queue"
                   className="block rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
@@ -838,7 +838,7 @@ function FloorLogDashboard() {
             })}
           </div>
           <a
-            href="/production"
+            href="/queue"
             className="mt-3 block text-center text-xs font-semibold"
             style={{ color: "#F5822A" }}
           >
