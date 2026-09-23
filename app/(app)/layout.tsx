@@ -343,8 +343,9 @@ function MoreMenu({
   );
 }
 
+// "Commercial" was renamed to "Office" in roles.ts — group names are now
+// Workshop / Office / Business, all short enough to display as-is on mobile.
 function mobileGroupLabel(group: NavGroup) {
-  if (group === "Commercial") return "Money";
   return group;
 }
 
