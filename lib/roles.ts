@@ -15,11 +15,11 @@
 // should ever be created with it, and this frontend treats it as an
 // unmapped role (falls through to the SAFE_DEFAULT below) rather than
 // giving it special-cased access.
- 
+
 import type { IconName } from "@/lib/components/Icon";
- 
+
 export type NavGroup = "Workshop" | "Commercial" | "Business";
- 
+
 export type Role =
   | "managing_director"
   | "manager"
@@ -32,22 +32,21 @@ export type Role =
   | "installer"
   | "employee"
   | "contractor";
- 
+
 export type PageKey =
   | "dashboard"
   | "jobs"
   | "tasks"
-  | "materials"
   | "inventory"
-  | "log"
+  | "production"
+  | "office"
   | "sales"
   | "analytics"
   | "invoices"
   | "design"
   | "team"
-  | "accounts"
-  | "trash";
- 
+  | "accounts";
+
 // `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
 // emoji. Emojis render differently on every OS and read as unprofessional in
 // a business tool, so the nav uses a single consistent stroked SVG set.
@@ -56,82 +55,80 @@ export const PAGES: Record<
   PageKey,
   { href: string; label: string; icon: IconName; group: NavGroup }
 > = {
-  dashboard: { href: "/dashboard", label: "Dashboard", icon: "dashboard", group: "Workshop" },
-  jobs:      { href: "/jobs",      label: "Jobs",      icon: "jobs",      group: "Workshop" },
-  tasks:     { href: "/tasks",     label: "Tasks",     icon: "tasks",     group: "Workshop" },
-  design:    { href: "/design",    label: "Design",    icon: "design",    group: "Workshop" },
-  materials: { href: "/materials", label: "Materials", icon: "inventory", group: "Workshop" },
-  inventory: { href: "/inventory", label: "Inventory", icon: "inventory", group: "Workshop" },
-  log:       { href: "/log",       label: "Log",       icon: "analytics", group: "Workshop" },
- 
+  dashboard:  { href: "/dashboard",  label: "Dashboard",  icon: "dashboard", group: "Workshop" },
+  jobs:       { href: "/jobs",       label: "Jobs",       icon: "jobs",      group: "Workshop" },
+  tasks:      { href: "/tasks",      label: "Tasks",      icon: "tasks",     group: "Workshop" },
+  design:     { href: "/design",     label: "Design",     icon: "design",    group: "Workshop" },
+  inventory:  { href: "/inventory",  label: "Inventory",  icon: "inventory", group: "Workshop" },
+  production: { href: "/production", label: "Production", icon: "wrench",     group: "Workshop" },
+  office:     { href: "/office",     label: "Purchasing", icon: "truck",     group: "Workshop" },
+
   sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Commercial" },
   invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Commercial" },
   accounts:  { href: "/accounts",  label: "Accounts",  icon: "accounts",  group: "Commercial" },
   analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Commercial" },
- 
+
   team:      { href: "/team",      label: "Team",      icon: "team",      group: "Business" },
-  trash:     { href: "/trash",     label: "Trash",     icon: "inventory", group: "Business" },
 };
- 
+
 export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
- 
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "materials", "inventory", "log", "sales", "analytics", "invoices", "design", "accounts"];
- 
-// Slice 8b — Trash lives in the Business group. It's added below to admin /
-// MD / manager (who can also permanent-delete) and supervisor (who can
-// restore, but the Trash page itself hides the Delete-forever button for
-// them — backend enforces the same rule).
- 
+
+// Full-access page list, in nav display order within each group. "production"
+// and "office" (Purchasing) sit in the Workshop group with the other
+// operational pages; the Commercial/Business pages follow.
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "inventory", "production", "office", "sales", "analytics", "invoices", "accounts"];
+
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
 // withheld from department_manager — the backend already treats that role
 // as legacy/non-assignable (roles/catalog marks it "assignable": false),
 // and user management is sensitive enough to keep to the top 3 roles only.
 const ALL_PAGES_PLUS_TEAM: PageKey[] = [...ALL_PAGES, "team"];
- 
+
 // Pages each role can reach, in nav display order. First entry = landing
 // page after login. Roles not listed here fall back to a minimal safe
 // default (dashboard + tasks) rather than accidentally granting broad access.
 const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
-  managing_director: [...ALL_PAGES_PLUS_TEAM, "trash"],
-  manager: [...ALL_PAGES_PLUS_TEAM, "trash"],
+  managing_director: ALL_PAGES_PLUS_TEAM,
+  manager: ALL_PAGES_PLUS_TEAM,
   department_manager: ALL_PAGES,
-  admin: [...ALL_PAGES_PLUS_TEAM, "trash"],
- 
+  admin: ALL_PAGES_PLUS_TEAM,
+
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
-  // Log added so supervisor can review workshop activity history.
-  supervisor: ["dashboard", "jobs", "tasks",  "materials", "inventory", "log", "trash"],
- 
-  // Materials/purchasing-facing role. Log added so office can review
-  // stock movements (receipts, consumption) as history.
-  office: ["dashboard", "jobs", "materials", "inventory", "invoices", "accounts", "log"],
- 
+  // Production is their main screen, so it sits right after the daily basics.
+  supervisor: ["dashboard", "jobs", "tasks", "production", "inventory"],
+
+  // Materials/purchasing-facing role. Purchasing is the queue they work from,
+  // added right after their existing landing page (Inventory).
+  office: ["inventory", "office", "invoices", "accounts", "dashboard"],
+
   // Design module only — matches the original app (Design + Profile only).
-  drafter: ["jobs"],
- 
-  // Floor workers — daily production log + their own tasks + Log history.
-  cabinet_maker: ["dashboard", "jobs", "tasks", "materials", "log"],
-  installer: ["dashboard", "jobs", "tasks", "materials", "log"],
-  employee: ["dashboard", "jobs", "tasks", "materials", "log"],
-  contractor: ["dashboard", "jobs", "tasks", "materials", "log"],
+  drafter: ["design"],
+
+  // Floor workers — daily production log, their own tasks, and the build queue
+  // so cabinet makers can see what to pick up without typing a URL.
+  cabinet_maker: ["dashboard", "tasks", "production"],
+  installer: ["dashboard", "tasks"],
+  employee: ["dashboard", "tasks", "production"],
+  contractor: ["dashboard", "tasks"],
 };
- 
+
 const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];
- 
+
 export function pagesForRole(role: string | undefined | null): PageKey[] {
   if (!role) return [];
   return ROLE_PAGES[role as Role] || SAFE_DEFAULT;
 }
- 
+
 export function navItemsForRole(role: string | undefined | null) {
   return pagesForRole(role).map((key) => ({ key, ...PAGES[key] }));
 }
- 
+
 export function landingPageForRole(role: string | undefined | null): string {
   const pages = pagesForRole(role);
   return pages.length ? PAGES[pages[0]].href : "/dashboard";
 }
- 
+
 // Given the current pathname (e.g. "/jobs"), is this role allowed here?
 // Unmapped paths (e.g. a future page not yet added to PAGES) are allowed
 // through by default — this table only restricts the known feature pages.
