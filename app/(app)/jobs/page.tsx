@@ -68,6 +68,9 @@ const JOB_MANAGE_ROLES = new Set([
 const DUAL_JOBS_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin", "office",
 ]);
+const JOB_CREATE_ROLES = new Set([
+  "managing_director", "manager", "department_manager", "admin", "drafter", "office",
+]);
 
 const STATUS_BADGE: Record<JobStatus, string> = {
   "Ready":            "badge-success",
@@ -1242,11 +1245,35 @@ function ManagementJobSummary() {
   );
 }
 
-function ManagementJobsWorkspace({ canManage }: { canManage: boolean }) {
+function IconPlus() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  );
+}
+
+function NewJobButton() {
+  return (
+    <a
+      href="/jobs/new"
+      className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 active:scale-95 transition-all"
+    >
+      <IconPlus />
+      New Job
+    </a>
+  );
+}
+
+function ManagementJobsWorkspace({ canManage, canCreate }: { canManage: boolean; canCreate: boolean }) {
   const [category, setCategory] = useState<"design" | "production">("design");
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between px-1 pt-1">
+        <h1 className="text-xl font-bold text-gray-900">Jobs</h1>
+        {canCreate && <NewJobButton />}
+      </div>
       <ManagementJobSummary />
       <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
         <div className="grid grid-cols-2 gap-2">
@@ -1288,12 +1315,23 @@ export default function JobsPage() {
   const { user } = useAuth();
   if (!user) return null;
 
+  const canCreate = JOB_CREATE_ROLES.has(user.role);
+
   if (DUAL_JOBS_ROLES.has(user.role)) {
-    return <ManagementJobsWorkspace canManage={JOB_MANAGE_ROLES.has(user.role)} />;
+    return <ManagementJobsWorkspace canManage={JOB_MANAGE_ROLES.has(user.role)} canCreate={canCreate} />;
   }
 
   if (user.role === "drafter" || user.role === "designer") {
-    return <DesignWorkspace />;
+    return (
+      <>
+        {canCreate && (
+          <div className="flex justify-end px-4 pt-4 pb-2">
+            <NewJobButton />
+          </div>
+        )}
+        <DesignWorkspace />
+      </>
+    );
   }
 
   if (user.role === "installer") return <CabinetmakerView userId={user.id} />;
