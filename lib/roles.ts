@@ -98,9 +98,9 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   // Production is their main screen, so it sits right after the daily basics.
   supervisor: ["dashboard", "jobs", "tasks", "production", "inventory"],
 
-  // Materials/purchasing-facing role. Purchasing is the queue they work from,
-  // added right after their existing landing page (Inventory).
-  office: ["inventory", "office", "invoices", "accounts", "dashboard"],
+  // Materials/purchasing-facing role. Purchasing is their landing page —
+  // it's the queue they work from. Inventory follows for stock checks.
+  office: ["office", "inventory", "invoices", "accounts", "dashboard"],
 
   // Design module only — matches the original app (Design + Profile only).
   drafter: ["design"],
