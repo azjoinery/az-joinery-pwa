@@ -1,26 +1,29 @@
 "use client";
 
 /**
- * Production — Weighted job-progress List view.
+ * Production — the build queue.
  *
- * A single honest progress number per job, shown as one weighted segmented bar:
- *   Assembly is a flat 30%.  CNC Cut + Hardware Fitted share the other 70%,
- *   split by each job's own board/hardware targets.
+ * Phase 4: this page now reads the shared pipeline instead of every job.
+ * GET /pipeline/production-queue returns only the jobs Production can act on —
+ * materials ready to build, plus jobs already in flight — in the right order
+ * (ready-to-start first, then most-progressed). Finished and not-yet-released
+ * jobs never appear here, so the floor sees a clean, short list of exactly
+ * what to pick up.
  *
- * All numbers are computed on the SERVER (GET /jobs/progress) — the single
- * source of truth. CNC-done and Hardware-done come straight from the material
- * Log (what the floor records in Materials — Live), so those bars fill on their
- * own. Targets and the Assembly tick are the only manual inputs.
+ * Each job still shows the one honest weighted % — Assembly 30%, CNC + Hardware
+ * share 70% by size — with the same segmented bar, target steppers and assembly
+ * tick. The per-job breakdown (targets, counts, shares) comes from
+ * GET /jobs/progress, the single source of truth; CNC-done and Hardware-done
+ * fill on their own from the material Log.
  *
- * New, self-contained page. Safe to add — touches nothing else.
- * Reachable at /production.
+ * Self-contained page at /production. Additive — touches nothing else.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 
-// ── Segment colours (from the approved mockup) ──────────────────────────────
+// ── Segment colours (the three kinds of work — from the approved mockup) ─────
 const COL = {
   cnc: "#3B82F6",
   assembly: "#8B5CF6",
@@ -29,17 +32,26 @@ const COL = {
   priority: "#DC2626",
 };
 
+// ── Pipeline stage colours (match the graded dashboard pipeline) ─────────────
+const STAGE = {
+  ready: { key: "materials_ready", label: "Ready to build", color: "#FB923C" },
+  building: { key: "in_production", label: "In progress", color: "#F5822A" },
+};
+
 const CAN_EDIT_TARGETS = new Set([
   "supervisor", "admin", "manager", "managing_director",
 ]);
 
-type Job = {
+// A job as it arrives from /pipeline/production-queue (_job_card shape).
+type QueueJob = {
   id: string;
   jobNum?: string;
   client?: string;
   projectName?: string;
   siteAddress?: string;
   priority?: string;
+  dueDate?: string;
+  stage?: string;
 };
 
 type Progress = {
@@ -54,7 +66,7 @@ type Progress = {
   assembly_done: boolean;
 };
 
-type Row = Job & { p: Progress };
+type Row = QueueJob & { p: Progress };
 
 const EMPTY_P: Progress = {
   progress: 0, progressRaw: 0,
@@ -67,24 +79,23 @@ export default function ProductionPage() {
   const { user } = useAuth();
   const canEdit = Boolean(user && CAN_EDIT_TARGETS.has(user.role));
 
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [queue, setQueue] = useState<QueueJob[]>([]);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"active" | "all">("active");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [jobRows, prog] = await Promise.all([
-        api.get<Job[]>("/jobs"),
+      const [q, prog] = await Promise.all([
+        api.get<{ count: number; jobs: QueueJob[] }>("/pipeline/production-queue"),
         api.get<Record<string, Progress>>("/jobs/progress"),
       ]);
-      setJobs(jobRows || []);
+      setQueue(q?.jobs || []);
       setProgress(prog || {});
     } catch {
-      setError("Could not load production progress. Tap Refresh to try again.");
+      setError("Could not load the production queue. Tap Refresh to try again.");
     } finally {
       setLoading(false);
     }
@@ -96,17 +107,17 @@ export default function ProductionPage() {
   const applyProgress = (jobId: string, p: Progress) =>
     setProgress((cur) => ({ ...cur, [jobId]: p }));
 
-  const rows: Row[] = useMemo(() => {
-    const merged = jobs.map((j) => ({ ...j, p: progress[j.id] || EMPTY_P }));
-    const list = filter === "active"
-      ? merged.filter((r) => r.p.progress < 100)
-      : merged;
-    // Most-progressed-but-not-done first, then by job number.
-    return list.sort((a, b) => {
-      if (a.p.progress !== b.p.progress) return b.p.progress - a.p.progress;
-      return (a.jobNum || "").localeCompare(b.jobNum || "");
-    });
-  }, [jobs, progress, filter]);
+  // Merge queue order (from the server) with live progress detail, then bucket
+  // by live progress so a job visibly moves to "In progress" the moment work
+  // starts — without waiting for a refresh.
+  const { ready, building } = useMemo(() => {
+    const rows: Row[] = queue.map((j) => ({ ...j, p: progress[j.id] || EMPTY_P }));
+    const readyRows = rows.filter((r) => r.p.progress <= 0);
+    const buildingRows = rows.filter((r) => r.p.progress > 0);
+    return { ready: readyRows, building: buildingRows };
+  }, [queue, progress]);
+
+  const total = ready.length + building.length;
 
   if (!user) return null;
 
@@ -115,9 +126,9 @@ export default function ProductionPage() {
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Workshop</p>
-          <h1 className="page-title mt-1">Production progress</h1>
+          <h1 className="page-title mt-1">Production queue</h1>
           <p className="mt-1 text-sm text-ink-500">
-            One honest % per job — Assembly 30%, CNC &amp; Hardware share 70% by size.
+            Jobs with materials ready, and jobs being built — in the order to pick them up.
           </p>
         </div>
         <button type="button" onClick={load} className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700">
@@ -127,27 +138,65 @@ export default function ProductionPage() {
 
       {error ? <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</div> : null}
 
-      <div className="mb-5 inline-grid grid-cols-2 gap-1 rounded-xl bg-ink-100 p-1">
-        <FilterBtn active={filter === "active"} onClick={() => setFilter("active")}>In progress</FilterBtn>
-        <FilterBtn active={filter === "all"} onClick={() => setFilter("all")}>All jobs</FilterBtn>
+      {/* Summary */}
+      <div className="mb-6 grid grid-cols-2 gap-3">
+        <Metric label="Ready to build" value={loading ? null : ready.length} color={STAGE.ready.color} />
+        <Metric label="In progress" value={loading ? null : building.length} color={STAGE.building.color} />
       </div>
 
       {loading ? (
-        <Empty text="Loading production…" />
-      ) : rows.length === 0 ? (
-        <Empty text={filter === "active" ? "No jobs in progress." : "No jobs yet."} />
+        <Empty text="Loading production queue…" />
+      ) : total === 0 ? (
+        <Empty text="Nothing to build right now — no released job has its materials ready." />
       ) : (
-        <div className="space-y-4">
-          {rows.map((row) => (
-            <JobRow
-              key={row.id}
-              row={row}
-              canEdit={canEdit}
-              onProgress={(p) => applyProgress(row.id, p)}
-            />
-          ))}
+        <div className="space-y-8">
+          {ready.length > 0 ? (
+            <Section title={STAGE.ready.label} color={STAGE.ready.color} count={ready.length}
+              hint="Materials on hand — good to start.">
+              {ready.map((row) => (
+                <JobRow key={row.id} row={row} canEdit={canEdit} onProgress={(p) => applyProgress(row.id, p)} />
+              ))}
+            </Section>
+          ) : null}
+
+          {building.length > 0 ? (
+            <Section title={STAGE.building.label} color={STAGE.building.color} count={building.length}
+              hint="Work under way.">
+              {building.map((row) => (
+                <JobRow key={row.id} row={row} canEdit={canEdit} onProgress={(p) => applyProgress(row.id, p)} />
+              ))}
+            </Section>
+          ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+function Section({ title, color, count, hint, children }: {
+  title: string; color: string; count: number; hint: string; children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+        <h2 className="text-lg font-bold text-ink-950">{title}</h2>
+        <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-bold tabular-nums text-ink-600">{count}</span>
+        <span className="ml-auto text-xs text-ink-400">{hint}</span>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function Metric({ label, value, color }: { label: string; value: number | null; color: string }) {
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-white p-3 shadow-sm">
+      <div className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{label}</p>
+      </div>
+      <p className="mt-1 text-2xl font-extrabold tabular-nums text-ink-950">{value == null ? "…" : value}</p>
     </div>
   );
 }
@@ -201,6 +250,7 @@ function JobRow({ row, canEdit, onProgress }: {
           </div>
           <h3 className="mt-1 truncate text-base font-bold text-ink-950">{title}</h3>
           {row.siteAddress ? <p className="truncate text-xs text-ink-500">{row.siteAddress}</p> : null}
+          {row.dueDate ? <p className="mt-0.5 text-xs text-ink-400">Due {row.dueDate}</p> : null}
         </div>
         <div className="shrink-0 text-right">
           <div className="text-2xl font-extrabold tabular-nums text-ink-950" style={p.progress >= 100 ? { color: COL.done } : undefined}>
@@ -319,14 +369,6 @@ function Label({ color, name, value }: { color: string; name: string; value: str
       </div>
       <div className="mt-0.5 text-sm font-bold tabular-nums text-ink-900">{value}</div>
     </div>
-  );
-}
-
-function FilterBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} className={`min-h-10 rounded-lg px-4 text-sm font-semibold ${active ? "bg-white text-ink-950 shadow-sm" : "text-ink-500"}`}>
-      {children}
-    </button>
   );
 }
 
