@@ -128,6 +128,12 @@ export default function MaterialsPage() {
       .map((row) => ({ entry, row }));
   }), [entries, periodStart]);
 
+  const assemblyRows = useMemo(() => entries.filter((entry) => {
+    if (entry.date < periodStart) return false;
+    const total = Object.values(entry.counts || {}).reduce((s, v) => s + Number(v), 0);
+    return total > 0;
+  }), [entries, periodStart]);
+
   const usedTotal = usageRows.reduce((sum, item) => sum + Number(item.row.qty || 0), 0);
   const assignedTotal = usageRows.reduce((sum, item) => sum + Number(item.row.assignedQty || 0), 0);
   const lowStock = stock.filter((item) =>
@@ -209,6 +215,7 @@ export default function MaterialsPage() {
               lowStock={lowStock}
               activeJobs={activeJobs}
               rows={usageRows}
+              assemblyRows={assemblyRows}
               transactions={transactions.filter((tx) => dateFromIso(tx.createdAt) >= periodStart)}
               stockById={stockById}
               jobsById={jobsById}
@@ -258,7 +265,14 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, transactions, stockById, jobsById }: {
+const CABINET_LABELS: Record<string, string> = {
+  cab_small: "Small",
+  cab_tall: "Tall",
+  cab_drawer: "Drawer / corner",
+  cab_special: "Special",
+};
+
+function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById }: {
   loading: boolean;
   period: "today" | "week";
   setPeriod: (value: "today" | "week") => void;
@@ -267,6 +281,7 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
   lowStock: number;
   activeJobs: number;
   rows: Array<{ entry: DailyEntry; row: EntryMaterial }>;
+  assemblyRows: DailyEntry[];
   transactions: StockTransaction[];
   stockById: Map<string, StockItem>;
   jobsById: Map<string, JobPick>;
@@ -311,6 +326,35 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
                     <strong className="tabular-nums text-ink-900">{used} / {assigned || "—"} {item?.unit || ""}</strong>
                   </div>
                   {assigned > 0 ? <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-100"><div className={`h-full rounded-full ${complete ? "bg-green-500" : "bg-brand-orange"}`} style={{ width: `${width}%` }} /></div> : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-6">
+        <h2 className="section-title mb-3">Assembly output</h2>
+        {loading ? <Empty text="Loading assembly data…" /> : assemblyRows.length === 0 ? <Empty text="No assembly recorded for this period." /> : (
+          <div className="space-y-3">
+            {assemblyRows.map((entry) => {
+              const total = Object.values(entry.counts || {}).reduce((s, v) => s + Number(v), 0);
+              return (
+                <div key={entry.id} className="rounded-xl border border-ink-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-ink-950">{entry.employeeName || "Worker"}</h3>
+                      <p className="mt-0.5 text-sm text-ink-500">{entry.date}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700">{total} cabinets</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Object.entries(entry.counts || {}).filter(([, v]) => Number(v) > 0).map(([key, v]) => (
+                      <span key={key} className="rounded-full border border-ink-200 bg-ink-50 px-2.5 py-0.5 text-xs text-ink-700">
+                        {CABINET_LABELS[key] || key}: <strong>{v}</strong>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               );
             })}
