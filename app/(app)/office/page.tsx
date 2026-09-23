@@ -1,22 +1,26 @@
 "use client";
 
 /**
- * Office — Purchasing queue.
+ * Office — 5 tabs for executive roles; Purchasing view only for office role.
  *
- * The live replacement for the old mock "Purchase Alerts". Reads the real
- * pipeline office-queue (every released job's short materials, grouped by
- * supplier) and lets Office raise a draft purchase order for a job's lines in
- * one tap. Creating the PO flips those materials to "Ordered", which advances
- * the job out of "Awaiting Materials" on the dashboard automatically.
+ * Executive tabs (Item E): Sales · Invoices · Purchasing · Accounts · Analytics
+ * Office role sees Purchasing directly — no tab bar, same as before.
  *
- * New, self-contained page at /office. Reachable now by URL; add it to the
- * menu when ready.
+ * URL: /office
+ * Backend calls:
+ *   Purchasing  → /pipeline/office-queue  (existing)
+ *   Sales       → /pipeline/sales
+ *   Invoices    → /invoices
+ *   Accounts    → /pipeline/accounts
+ *   Analytics   → /analytics/summary
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type OfficeLine = {
   id: string;
@@ -43,12 +47,149 @@ type OfficeQueue = {
   suppliers: OfficeSupplier[];
 };
 
-const CAN_ORDER = new Set(["office", "admin", "manager", "managing_director"]);
+type Invoice = {
+  id: string;
+  invoiceNumber?: string;
+  jobId?: string;
+  jobNum?: string;
+  client?: string;
+  amount: number;
+  status?: string; // draft | sent | paid | overdue
+  issuedDate?: string;
+  dueDate?: string;
+  paidDate?: string;
+};
+
+type SalesItem = {
+  id: string;
+  jobNum?: string;
+  client?: string;
+  description?: string;
+  stage?: string;
+  value?: number;
+  createdAt?: string;
+  followUpDate?: string;
+};
+
+type AccountsSummary = {
+  totalOutstanding: number;
+  totalOverdue: number;
+  totalPaid30d: number;
+  invoices?: Invoice[];
+};
+
+type AnalyticsSummary = {
+  revenueThisMonth: number;
+  revenueLastMonth: number;
+  jobsCompleted30d: number;
+  avgJobValue: number;
+  overdueCount: number;
+  overdueAmount: number;
+};
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const EXECUTIVE_ROLES = new Set([
+  "managing_director",
+  "manager",
+  "department_manager",
+  "admin",
+]);
+const CAN_ORDER = new Set([
+  "office",
+  "admin",
+  "manager",
+  "managing_director",
+]);
+
+type OfficeTab = "sales" | "invoices" | "purchasing" | "accounts" | "analytics";
+
+const EXEC_TABS: { key: OfficeTab; label: string }[] = [
+  { key: "sales",      label: "Sales" },
+  { key: "invoices",   label: "Invoices" },
+  { key: "purchasing", label: "Purchasing" },
+  { key: "accounts",   label: "Accounts" },
+  { key: "analytics",  label: "Analytics" },
+];
+
+const STATUS_STYLE: Record<string, string> = {
+  paid:    "bg-green-50 text-green-700 border-green-200",
+  overdue: "bg-red-50 text-red-700 border-red-200",
+  sent:    "bg-blue-50 text-blue-700 border-blue-200",
+  draft:   "bg-ink-100 text-ink-600 border-ink-200",
+};
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OfficePage() {
   const { user } = useAuth();
-  const canOrder = !!user && CAN_ORDER.has(user.role);
+  const [activeTab, setActiveTab] = useState<OfficeTab>("purchasing");
 
+  if (!user) return null;
+
+  const isExec = EXECUTIVE_ROLES.has(user.role);
+  const canOrder = CAN_ORDER.has(user.role);
+
+  // Non-executive roles (Office / Purchasing staff) see the queue directly.
+  if (!isExec) {
+    return (
+      <div className="page pb-28">
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">
+            Office
+          </p>
+          <h1 className="page-title mt-1">Purchasing</h1>
+          <p className="mt-1 text-sm text-ink-500">
+            Everything released jobs still need — grouped by supplier.
+          </p>
+        </div>
+        <PurchasingContent canOrder={canOrder} />
+      </div>
+    );
+  }
+
+  // Executive roles see a 5-tab view.
+  return (
+    <div className="page pb-28">
+      <div className="mb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">
+          Office
+        </p>
+        <h1 className="page-title mt-1">Office</h1>
+      </div>
+
+      {/* Tab bar — scrollable on narrow screens */}
+      <div className="-mx-4 mb-6 overflow-x-auto px-4 md:-mx-8 md:px-8">
+        <div className="flex min-w-max gap-1 rounded-xl bg-ink-100 p-1">
+          {EXEC_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                activeTab === tab.key
+                  ? "bg-white text-ink-900 shadow-sm"
+                  : "text-ink-500 hover:text-ink-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "purchasing" && <PurchasingContent canOrder={canOrder} />}
+      {activeTab === "sales"      && <SalesView />}
+      {activeTab === "invoices"   && <InvoicesView />}
+      {activeTab === "accounts"   && <AccountsView />}
+      {activeTab === "analytics"  && <AnalyticsView />}
+    </div>
+  );
+}
+
+// ─── Purchasing tab ───────────────────────────────────────────────────────────
+
+function PurchasingContent({ canOrder }: { canOrder: boolean }) {
   const [queue, setQueue] = useState<OfficeQueue | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -72,7 +213,12 @@ export default function OfficePage() {
     load();
   }, [load]);
 
-  const createPO = async (supplier: string, jobId: string, jobNum: string, lineIds: string[]) => {
+  const createPO = async (
+    supplier: string,
+    jobId: string,
+    jobNum: string,
+    lineIds: string[]
+  ) => {
     const key = `${supplier}::${jobId}`;
     setBusyKey(key);
     setMessage("");
@@ -81,7 +227,9 @@ export default function OfficePage() {
         `/jobs/${jobId}/materials/create-po`,
         { supplier, materialIds: lineIds }
       );
-      setMessage(`Draft PO ${po?.poNumber || ""} created for job #${jobNum}. It's in the PO tracker.`);
+      setMessage(
+        `Draft PO ${po?.poNumber || ""} created for job #${jobNum}. It's in the PO tracker.`
+      );
       await load();
     } catch {
       setMessage("Couldn't create that PO. Please try again.");
@@ -91,21 +239,17 @@ export default function OfficePage() {
   };
 
   const totals = queue
-    ? { lines: queue.totalLines, jobs: queue.totalJobs, suppliers: queue.suppliers.length }
+    ? {
+        lines: queue.totalLines,
+        jobs: queue.totalJobs,
+        suppliers: queue.suppliers.length,
+      }
     : { lines: 0, jobs: 0, suppliers: 0 };
 
-  if (!user) return null;
-
   return (
-    <div className="page pb-28">
-      <div className="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Office</p>
-          <h1 className="page-title mt-1">Purchasing</h1>
-          <p className="mt-1 text-sm text-ink-500">
-            Everything released jobs still need — grouped by supplier.
-          </p>
-        </div>
+    <>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-sm text-ink-500">Released jobs — grouped by supplier.</p>
         <button
           type="button"
           onClick={load}
@@ -126,11 +270,10 @@ export default function OfficePage() {
         </div>
       ) : null}
 
-      {/* Summary */}
       <div className="mb-6 grid grid-cols-3 gap-3">
         <Metric label="Items to order" value={totals.lines} />
-        <Metric label="Jobs" value={totals.jobs} />
-        <Metric label="Suppliers" value={totals.suppliers} />
+        <Metric label="Jobs"           value={totals.jobs} />
+        <Metric label="Suppliers"      value={totals.suppliers} />
       </div>
 
       {loading ? (
@@ -150,9 +293,273 @@ export default function OfficePage() {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+// ─── Sales tab ────────────────────────────────────────────────────────────────
+
+function SalesView() {
+  const [items, setItems] = useState<SalesItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<SalesItem[]>("/pipeline/sales")
+      .then(setItems)
+      .catch(() => setError("Couldn't load sales data."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Empty text="Loading sales pipeline…" />;
+  if (error)   return <ErrorBox text={error} />;
+  if (!items.length) return <Empty text="No active sales entries." />;
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="rounded-card border border-ink-200 bg-white px-4 py-3"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-ink-900">
+                {item.client || "—"}
+                {item.jobNum ? (
+                  <span className="ml-1.5 text-ink-400">#{item.jobNum}</span>
+                ) : null}
+              </p>
+              {item.description ? (
+                <p className="mt-0.5 truncate text-sm text-ink-500">
+                  {item.description}
+                </p>
+              ) : null}
+            </div>
+            <div className="shrink-0 text-right">
+              {item.value != null ? (
+                <p className="font-heading font-semibold tabular text-ink-900">
+                  {fmt$(item.value)}
+                </p>
+              ) : null}
+              {item.stage ? (
+                <span className="mt-1 inline-block rounded-full bg-ink-100 px-2 py-0.5 text-[11px] font-semibold text-ink-600">
+                  {item.stage}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          {item.followUpDate ? (
+            <p className="mt-2 text-xs text-ink-400">
+              Follow up: {fmtDate(item.followUpDate)}
+            </p>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
+
+// ─── Invoices tab ─────────────────────────────────────────────────────────────
+
+function InvoicesView() {
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<Invoice[]>("/invoices")
+      .then(setInvoices)
+      .catch(() => setError("Couldn't load invoices."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Empty text="Loading invoices…" />;
+  if (error)   return <ErrorBox text={error} />;
+  if (!invoices.length) return <Empty text="No invoices yet." />;
+
+  return (
+    <div className="space-y-3">
+      {invoices.map((inv) => {
+        const statusKey = (inv.status || "draft").toLowerCase();
+        const badgeClass = STATUS_STYLE[statusKey] || STATUS_STYLE.draft;
+        return (
+          <div
+            key={inv.id}
+            className="rounded-card border border-ink-200 bg-white px-4 py-3"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-ink-900">
+                  {inv.client || "—"}
+                  {inv.invoiceNumber ? (
+                    <span className="ml-1.5 text-ink-400">#{inv.invoiceNumber}</span>
+                  ) : null}
+                </p>
+                {inv.jobNum ? (
+                  <p className="mt-0.5 text-sm text-ink-500">Job #{inv.jobNum}</p>
+                ) : null}
+                {inv.dueDate ? (
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    Due {fmtDate(inv.dueDate)}
+                  </p>
+                ) : null}
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="font-heading font-semibold tabular text-ink-900">
+                  {fmt$(inv.amount)}
+                </p>
+                <span
+                  className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${badgeClass}`}
+                >
+                  {statusKey}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Accounts tab ─────────────────────────────────────────────────────────────
+
+function AccountsView() {
+  const [data, setData] = useState<AccountsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<AccountsSummary>("/pipeline/accounts")
+      .then(setData)
+      .catch(() => setError("Couldn't load accounts data."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Empty text="Loading accounts…" />;
+  if (error)   return <ErrorBox text={error} />;
+  if (!data)   return <Empty text="No accounts data available." />;
+
+  return (
+    <>
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        <MetricCard label="Outstanding"  value={fmt$(data.totalOutstanding)} />
+        <MetricCard
+          label="Overdue"
+          value={fmt$(data.totalOverdue)}
+          sub={data.totalOverdue > 0 ? "Action needed" : undefined}
+          subColor="text-red-600"
+        />
+        <MetricCard label="Paid (30d)" value={fmt$(data.totalPaid30d)} />
+      </div>
+
+      {data.invoices && data.invoices.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Outstanding invoices
+          </p>
+          {data.invoices.map((inv) => {
+            const statusKey = (inv.status || "draft").toLowerCase();
+            const badgeClass = STATUS_STYLE[statusKey] || STATUS_STYLE.draft;
+            return (
+              <div
+                key={inv.id}
+                className="rounded-card border border-ink-200 bg-white px-4 py-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-ink-900">
+                      {inv.client || "—"}
+                    </p>
+                    {inv.dueDate ? (
+                      <p className="text-xs text-ink-400">
+                        Due {fmtDate(inv.dueDate)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-heading font-semibold tabular text-ink-900">
+                      {fmt$(inv.amount)}
+                    </p>
+                    <span
+                      className={`mt-0.5 inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${badgeClass}`}
+                    >
+                      {statusKey}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// ─── Analytics tab ────────────────────────────────────────────────────────────
+
+function AnalyticsView() {
+  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<AnalyticsSummary>("/analytics/summary")
+      .then(setData)
+      .catch(() => setError("Couldn't load analytics."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Empty text="Loading analytics…" />;
+  if (error)   return <ErrorBox text={error} />;
+  if (!data)   return <Empty text="No analytics data available." />;
+
+  const revDiff =
+    data.revenueLastMonth > 0
+      ? Math.round(
+          ((data.revenueThisMonth - data.revenueLastMonth) /
+            data.revenueLastMonth) *
+            100
+        )
+      : 0;
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <MetricCard
+        label="Revenue this month"
+        value={fmt$(data.revenueThisMonth)}
+        sub={
+          revDiff !== 0
+            ? `${revDiff > 0 ? "+" : ""}${revDiff}% vs last month`
+            : "Same as last month"
+        }
+        subColor={revDiff >= 0 ? "text-green-600" : "text-red-600"}
+      />
+      <MetricCard
+        label="Jobs completed (30d)"
+        value={String(data.jobsCompleted30d)}
+      />
+      <MetricCard
+        label="Avg job value"
+        value={fmt$(data.avgJobValue)}
+      />
+      <MetricCard
+        label="Overdue invoices"
+        value={String(data.overdueCount)}
+        sub={data.overdueAmount > 0 ? fmt$(data.overdueAmount) : undefined}
+        subColor={data.overdueCount > 0 ? "text-red-600" : "text-green-600"}
+      />
+    </div>
+  );
+}
+
+// ─── Supplier card (Purchasing tab) ──────────────────────────────────────────
 
 function SupplierCard({
   supplier,
@@ -163,11 +570,18 @@ function SupplierCard({
   supplier: OfficeSupplier;
   canOrder: boolean;
   busyKey: string | null;
-  onCreatePO: (supplier: string, jobId: string, jobNum: string, lineIds: string[]) => void;
+  onCreatePO: (
+    supplier: string,
+    jobId: string,
+    jobNum: string,
+    lineIds: string[]
+  ) => void;
 }) {
-  // Group this supplier's lines by job so a PO can be raised per job.
   const jobs = useMemo(() => {
-    const map = new Map<string, { jobId: string; jobNum: string; client: string; lines: OfficeLine[] }>();
+    const map = new Map<
+      string,
+      { jobId: string; jobNum: string; client: string; lines: OfficeLine[] }
+    >();
     for (const ln of supplier.lines) {
       const g = map.get(ln.jobId) || {
         jobId: ln.jobId,
@@ -185,10 +599,12 @@ function SupplierCard({
     <div className="overflow-hidden rounded-card border border-ink-200 bg-white">
       <div className="flex items-center justify-between gap-3 border-b border-ink-100 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate font-heading text-base font-semibold text-ink-900">{supplier.supplier}</h2>
+          <h2 className="truncate font-heading text-base font-semibold text-ink-900">
+            {supplier.supplier}
+          </h2>
           <p className="text-xs text-ink-500">
-            {supplier.lineCount} item{supplier.lineCount === 1 ? "" : "s"} · {supplier.jobCount} job
-            {supplier.jobCount === 1 ? "" : "s"}
+            {supplier.lineCount} item{supplier.lineCount === 1 ? "" : "s"} ·{" "}
+            {supplier.jobCount} job{supplier.jobCount === 1 ? "" : "s"}
           </p>
         </div>
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-brand-orange/10 font-heading text-sm font-bold tabular text-brand-orange-dark">
@@ -203,7 +619,10 @@ function SupplierCard({
           return (
             <div key={job.jobId} className="px-4 py-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <Link href="/jobs" className="text-sm font-semibold text-ink-900">
+                <Link
+                  href="/jobs"
+                  className="text-sm font-semibold text-ink-900"
+                >
                   #{job.jobNum} · {job.client}
                 </Link>
                 {canOrder ? (
@@ -226,11 +645,17 @@ function SupplierCard({
               </div>
               <ul className="space-y-1">
                 {job.lines.map((ln) => (
-                  <li key={ln.id} className="flex items-center justify-between gap-3 text-sm">
+                  <li
+                    key={ln.id}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
                     <span className="min-w-0 truncate text-ink-700">
                       {ln.description}
                       {ln.requiredBy ? (
-                        <span className="text-ink-400"> · by {ln.requiredBy}</span>
+                        <span className="text-ink-400">
+                          {" "}
+                          · by {ln.requiredBy}
+                        </span>
                       ) : null}
                     </span>
                     <span className="shrink-0 font-heading font-semibold tabular text-ink-900">
@@ -247,11 +672,45 @@ function SupplierCard({
   );
 }
 
+// ─── Shared components ────────────────────────────────────────────────────────
+
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-card border border-ink-200 bg-white p-3">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{label}</p>
-      <p className="mt-1 font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">{value}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">
+        {label}
+      </p>
+      <p className="mt-1 font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  sub,
+  subColor,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  subColor?: string;
+}) {
+  return (
+    <div className="rounded-card border border-ink-200 bg-white p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">
+        {label}
+      </p>
+      <p className="mt-1 font-heading text-xl font-semibold tabular tracking-tight text-ink-900">
+        {value}
+      </p>
+      {sub ? (
+        <p className={`mt-1 text-xs font-medium ${subColor || "text-ink-500"}`}>
+          {sub}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -264,6 +723,32 @@ function Empty({ text }: { text: string }) {
   );
 }
 
+function ErrorBox({ text }: { text: string }) {
+  return (
+    <div className="rounded-card border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+      {text}
+    </div>
+  );
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatQty(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function fmt$(n: number) {
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: "AUD",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function fmtDate(s: string) {
+  return new Date(s).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
