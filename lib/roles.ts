@@ -45,7 +45,8 @@ export type PageKey =
   | "invoices"
   | "design"
   | "team"
-  | "accounts";
+  | "accounts"
+  | "materials";
 
 // `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
 // emoji. Emojis render differently on every OS and read as unprofessional in
@@ -62,6 +63,7 @@ export const PAGES: Record<
   inventory:  { href: "/inventory",  label: "Inventory",  icon: "inventory", group: "Workshop" },
   production: { href: "/production", label: "Production", icon: "wrench",     group: "Workshop" },
   office:     { href: "/office",     label: "Purchasing", icon: "truck",     group: "Workshop" },
+  materials:  { href: "/materials",  label: "Materials",  icon: "inventory", group: "Workshop" },
 
   sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Commercial" },
   invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Commercial" },
@@ -76,7 +78,7 @@ export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"
 // Full-access page list, in nav display order within each group. "production"
 // and "office" (Purchasing) sit in the Workshop group with the other
 // operational pages; the Commercial/Business pages follow.
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "inventory", "production", "office", "sales", "analytics", "invoices", "accounts"];
+const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "design", "inventory", "production", "office", "materials", "sales", "analytics", "invoices", "accounts"];
 
 // Managing Director, General Manager, and Admin get everything Department
 // Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
@@ -96,7 +98,7 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
 
   // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
   // Production is their main screen, so it sits right after the daily basics.
-  supervisor: ["dashboard", "jobs", "tasks", "production", "inventory"],
+  supervisor: ["dashboard", "jobs", "tasks", "production", "inventory", "materials"],
 
   // Materials/purchasing-facing role. Purchasing is their landing page —
   // it's the queue they work from. Inventory follows for stock checks.
@@ -107,9 +109,9 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
 
   // Floor workers — daily production log, their own tasks, and the build queue
   // so cabinet makers can see what to pick up without typing a URL.
-  cabinet_maker: ["dashboard", "tasks", "production"],
+  cabinet_maker: ["dashboard", "tasks", "production", "materials"],
   installer: ["dashboard", "tasks"],
-  employee: ["dashboard", "tasks", "production"],
+  employee: ["dashboard", "tasks", "production", "materials"],
   contractor: ["dashboard", "tasks"],
 };
 
