@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/store/auth";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
