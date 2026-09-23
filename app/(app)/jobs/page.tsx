@@ -6,7 +6,7 @@
  * Role-aware: shows a different view depending on who is logged in.
  *   cabinet_maker / installer / employee / contractor → My Jobs (Cabinetmaker view)
  *   supervisor                                        → Workshop Queue
- *   admin / manager / managing_director               → Purchase Alerts + PO Tracker
+ *   admin / manager / managing_director / office      → 3-tab workspace (Office · Design · Production)
  *
  * API endpoints to add to server.py:
  *   GET  /jobs                         → list (backend filters by role automatically)
@@ -254,6 +254,13 @@ function IconClose({ size = 16 }: { size?: number }) {
 }
 function IconWarn() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+}
+function IconPlus() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  );
 }
 
 // ─── Stage Pills ──────────────────────────────────────────────────────────────
@@ -970,7 +977,7 @@ function SupervisorView() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// VIEW 3 — ADMIN / MANAGER
+// OFFICE TAB — Purchase Alerts + PO Tracker (embedded in 3-tab workspace)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type AdminTab = "Purchase Alerts" | "PO Tracker";
@@ -980,7 +987,7 @@ const PO_STATUS_BADGE: Record<POStatus, string> = {
   "Partial": "badge-warning", "Received": "badge-success",
 };
 
-function AdminView() {
+function OfficeTabContent() {
   const [tab, setTab] = useState<AdminTab>("Purchase Alerts");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
@@ -1023,14 +1030,7 @@ function AdminView() {
   };
 
   return (
-    <div className="page pb-nav">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Purchasing</h1>
-          <p className="page-subtitle">Material alerts and purchase orders</p>
-        </div>
-      </div>
-
+    <>
       <div className="tabs mb-5">
         {(["Purchase Alerts", "PO Tracker"] as AdminTab[]).map(t => (
           <button key={t} className={`tab ${tab === t ? "tab-active" : ""}`} onClick={() => setTab(t)}>
@@ -1167,91 +1167,21 @@ function AdminView() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3-TAB MANAGEMENT WORKSPACE  (Office · Design · Production)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-interface ManagementJobSnapshot {
-  id: string;
-  status?: string;
-  currentStatus?: string;
-  dueDate?: string;
-  targetProductionDate?: string;
-  assignedStaff?: string;
-  blocked?: boolean;
-}
+type WorkspaceTab = "office" | "design" | "production";
 
-function ManagementJobSummary() {
-  const [jobs, setJobs] = useState<ManagementJobSnapshot[]>([]);
-
-  useEffect(() => {
-    let mounted = true;
-    api.get<ManagementJobSnapshot[]>("/jobs")
-      .then(data => { if (mounted) setJobs(data); })
-      .catch(() => { if (mounted) setJobs([]); });
-    return () => { mounted = false; };
-  }, []);
-
-  const attention = jobs.filter(job => {
-    const status = `${job.status || ""} ${job.currentStatus || ""}`.toLowerCase();
-    const complete = /completed|done|delivered/.test(status);
-    const due = job.targetProductionDate || job.dueDate;
-    const overdue = due ? (() => {
-      try { return isPast(parseISO(due)); } catch { return false; }
-    })() : false;
-    return !complete && (Boolean(job.blocked) || status.includes("blocked") || overdue);
-  }).length;
-  const active = jobs.filter(job => {
-    const status = `${job.status || ""} ${job.currentStatus || ""}`.toLowerCase();
-    return !status.includes("completed") && !status.includes("done") && !status.includes("delivered");
-  }).length;
-  const unassigned = jobs.filter(job => !job.assignedStaff).length;
-
-  const items = [
-    { label: "Needs attention", value: attention, tone: attention ? "text-danger" : "text-success-dark" },
-    { label: "Active jobs", value: active, tone: "text-brand-orange" },
-    { label: "Unassigned", value: unassigned, tone: unassigned ? "text-warning-dark" : "text-ink-600" },
-  ];
-
-  return (
-    <section className="rounded-2xl border border-ink-200 bg-white p-3 shadow-sm sm:p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="eyebrow">Job control</p>
-          <h1 className="mt-1 font-heading text-lg font-semibold text-ink-950">Keep every job moving</h1>
-        </div>
-        <span className="hidden rounded-full bg-ink-100 px-3 py-1 text-xs font-semibold text-ink-600 sm:inline-flex">MD view</span>
-      </div>
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {items.map(item => (
-          <div key={item.label} className="rounded-xl bg-ink-50 px-3 py-2.5">
-            <p className="text-[11px] font-medium leading-tight text-ink-500">{item.label}</p>
-            <p className={`mt-1 text-xl font-bold tabular-nums ${item.tone}`}>{item.value}</p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] font-semibold text-ink-500">
-        {["Lead", "Quote", "Design", "Approval", "Materials", "Production", "Install", "Invoice"].map((step, index, all) => (
-          <span key={step} className="flex shrink-0 items-center gap-1.5">
-            <span className="rounded-full border border-ink-200 bg-white px-2.5 py-1">{step}</span>
-            {index < all.length - 1 && <span className="text-ink-300">›</span>}
-          </span>
-        ))}
-      </div>
-      <p className="mt-2 text-xs text-ink-500">Open a job below when you need the full details or an action.</p>
-    </section>
-  );
-}
-
-function IconPlus() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-  );
-}
+const WORKSPACE_TABS: { key: WorkspaceTab; label: string }[] = [
+  { key: "office",     label: "Office" },
+  { key: "design",     label: "Design" },
+  { key: "production", label: "Production" },
+];
 
 function NewJobButton() {
   return (
@@ -1266,50 +1196,41 @@ function NewJobButton() {
 }
 
 function ManagementJobsWorkspace({ canManage, canCreate }: { canManage: boolean; canCreate: boolean }) {
-  const [category, setCategory] = useState<"design" | "production">("design");
+  const [tab, setTab] = useState<WorkspaceTab>("production");
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between px-1 pt-1">
-        <h1 className="text-xl font-bold text-gray-900">Jobs</h1>
+    <div className="page pb-nav">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Jobs</h1>
+          <p className="page-subtitle">Office · Design · Workshop</p>
+        </div>
         {canCreate && <NewJobButton />}
       </div>
-      <ManagementJobSummary />
-      <div className="rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setCategory("design")}
-            className={`min-h-12 rounded-xl px-4 text-sm font-semibold transition-colors ${
-              category === "design"
-                ? "bg-orange-500 text-white shadow-sm"
-                : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            Design
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategory("production")}
-            className={`min-h-12 rounded-xl px-4 text-sm font-semibold transition-colors ${
-              category === "production"
-                ? "bg-orange-500 text-white shadow-sm"
-                : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            Production
-          </button>
+
+      {/* Scrollable tab bar — safe on narrow phones */}
+      <div className="-mx-4 overflow-x-auto px-4 mb-5">
+        <div className="tabs min-w-max">
+          {WORKSPACE_TABS.map(t => (
+            <button
+              key={t.key}
+              className={`tab ${tab === t.key ? "tab-active" : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {category === "design" ? (
-        <DesignWorkspace />
-      ) : (
-        <JobsKanban canManage={canManage} />
-      )}
+      {tab === "office"     && <OfficeTabContent />}
+      {tab === "design"     && <DesignWorkspace />}
+      {tab === "production" && <JobsKanban canManage={canManage} />}
     </div>
   );
 }
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function JobsPage() {
   const { user } = useAuth();
