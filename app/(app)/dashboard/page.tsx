@@ -593,7 +593,8 @@ function FloorLogDashboard() {
   // Materials used today — deducted from stock on save (delta-reconciled server-side).
   const [materials, setMaterials] = useState<EntryMaterial[]>([]);
   const [stockList, setStockList] = useState<StockPick[]>([]);
-  const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string; assignedStaff?: string; status?: string; currentStatus?: string }[]>([]);
+  const [jobList, setJobList] = useState<{ id: string; jobNum?: string; client?: string; projectName?: string; assignedStaff?: string; status?: string; currentStatus?: string; dueDate?: string }[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, { progress: number; stage: string }>>({});
 
   // Counter-based materials UI (Slice 1) — Assigned / Record tabs.
   // Each + / − tap updates local materials state and schedules a debounced save.
@@ -619,6 +620,12 @@ function FloorLogDashboard() {
     api.get<StockPick[]>("/stock/items?active=true")
       .then((rows) => setStockList(rows || [])).catch(() => {});
     api.get<any[]>("/jobs").then((rows) => setJobList(rows || [])).catch(() => {});
+    api.get<Array<{ id: string; progress: number; stage: string }>>("/jobs/progress")
+      .then((rows) => {
+        const map: Record<string, { progress: number; stage: string }> = {};
+        (rows || []).forEach((r) => { if (r.id) map[r.id] = r; });
+        setProgressMap(map);
+      }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -786,6 +793,74 @@ function FloorLogDashboard() {
           </p>
         </div>
       </WorkshopHero>
+
+      {/* ===== Your build queue ===== */}
+      {floorJobs.length > 0 && (
+        <section className="mb-6 mt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="section-title">Your build queue</h2>
+            <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              {floorJobs.length} job{floorJobs.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {floorJobs.map((job) => {
+              const prog = progressMap[job.id];
+              const pct = prog?.progress ?? 0;
+              const isBuilding = pct > 0 && pct < 100;
+              const isDone = pct >= 100;
+              const barColor = isDone ? "#16a34a" : isBuilding ? "#F5822A" : "#d1d5db";
+              const pctColor = isDone ? "#16a34a" : isBuilding ? "#F5822A" : "#9ca3af";
+              return (
+                <a
+                  key={job.id}
+                  href="/production"
+                  className="block rounded-xl border border-gray-200 bg-white p-4 active:bg-gray-50"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-gray-900">
+                        {[job.jobNum && `#${job.jobNum}`, job.client || job.projectName || "Job"]
+                          .filter(Boolean)
+                          .join(" — ")}
+                      </div>
+                      {job.dueDate && (
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Due {new Date(job.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                        </div>
+                      )}
+                    </div>
+                    <span
+                      className="shrink-0 text-sm font-bold tabular-nums"
+                      style={{ color: pctColor }}
+                    >
+                      {pct}%
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                    />
+                  </div>
+                  {prog?.stage && (
+                    <div className="mt-1 text-[10px] font-medium text-gray-400 capitalize">
+                      {prog.stage === "done" ? "✓ Built" : `Building — ${prog.stage.replace(/_/g, " ")}`}
+                    </div>
+                  )}
+                </a>
+              );
+            })}
+          </div>
+          <a
+            href="/production"
+            className="mt-3 block text-center text-xs font-semibold"
+            style={{ color: "#F5822A" }}
+          >
+            Full build queue →
+          </a>
+        </section>
+      )}
 
       <>
       {/* ============================================================
