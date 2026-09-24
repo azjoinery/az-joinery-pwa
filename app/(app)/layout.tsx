@@ -8,6 +8,7 @@ import {
   navItemsForRole,
   isPathAllowedForRole,
   landingPageForRole,
+  mobilePrimaryCount,
   NAV_GROUP_ORDER,
   type NavGroup,
 } from "@/lib/roles";
@@ -91,9 +92,12 @@ export default function ProtectedLayout({
     .join("")
     .toUpperCase();
 
-  // On phones the bottom bar can only hold ~5 items comfortably.
-  const primaryMobile = navItems.slice(0, 4);
-  const overflowMobile = navItems.slice(4);
+  // On phones the bottom bar can hold up to 5 items.
+  // Drafter gets 5 primary tabs; exec roles get 3 primary + More;
+  // everyone else defaults to 4 primary.
+  const mobileLimit = mobilePrimaryCount(user?.role);
+  const primaryMobile = navItems.slice(0, mobileLimit);
+  const overflowMobile = navItems.slice(mobileLimit);
 
   return (
     <div className="min-h-screen bg-ink-50">
@@ -343,9 +347,9 @@ function MoreMenu({
   );
 }
 
-// "Commercial" was renamed to "Office" in roles.ts — group names are now
-// Workshop / Office / Business, all short enough to display as-is on mobile.
 function mobileGroupLabel(group: NavGroup) {
+  // "Workshop" items (dashboard/jobs/tasks) are in the primary bar — they only
+  // appear here in the More drawer if a role has many items, so keep the label.
   return group;
 }
 
