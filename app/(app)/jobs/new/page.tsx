@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { api } from "@/lib/api";
+import { useAuth } from "@/lib/store/auth";
+import { api } from "@/lib/api/client";
 
 const JOB_TYPES = ["Kitchen", "Wardrobe", "Bathroom", "Laundry", "BBQ Kitchen", "Vanity", "TV Unit", "Other"];
 const PRIORITY = ["Standard", "High", "Urgent"];
