@@ -19,10 +19,15 @@ const EXECUTIVE_ROLES = new Set([
   "office",
 ]);
 
+const DRAFTER_ROLES = new Set(["drafter", "design"]);
+
 export default function DashboardPage() {
   const { user } = useAuth();
   if (user && EXECUTIVE_ROLES.has(user.role)) {
     return <ExecutiveOverview />;
+  }
+  if (user && DRAFTER_ROLES.has(user.role)) {
+    return <DrafterDashboard />;
   }
   return <FloorLogDashboard />;
 }
@@ -514,6 +519,194 @@ function QuickAction({
       </span>
       <span className="text-xs font-medium text-ink-700">{label}</span>
     </Link>
+  );
+}
+
+
+/* ==========================================================================
+   Drafter / Design dashboard
+   ========================================================================== */
+
+function DrafterHeader({ name, jobCount }: { name: string; jobCount?: number }) {
+  const today = new Date().toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  const h = new Date().getHours();
+  const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return (
+    <div className="mb-6 rounded-card bg-ink-950 px-5 py-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-orange">
+        Design &amp; Drafting
+      </p>
+      <div className="mt-2.5 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-heading text-xl font-semibold tracking-tight text-white">
+            {greeting}, {name}
+          </h1>
+          <p className="mt-0.5 text-xs text-white/50">{today}</p>
+        </div>
+        {jobCount != null && (
+          <div className="shrink-0 text-right">
+            <p className="font-heading text-3xl font-bold tabular tracking-tight text-brand-orange">
+              {jobCount}
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-white/40">
+              jobs assigned
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Drafter job-view helpers ---- */
+
+interface DrafterJobView {
+  id: string;
+  jobNum?: string;
+  client?: string;
+  projectName?: string;
+  stage?: string;
+  brief_status?: "pending" | "uploaded" | "checked";
+  variation_count?: number;
+}
+
+function drafterStageMeta(stage?: string): { label: string; className: string } {
+  const s = (stage || "").toLowerCase();
+  if (s.includes("design") || s.includes("drawing") || s === "in_design")
+    return { label: "Drawing", className: "bg-blue-100 text-blue-700" };
+  if (s.includes("production") || s === "in_production")
+    return { label: "Production", className: "bg-orange-100 text-brand-orange-dark" };
+  if (s.includes("complete") || s.includes("delivered"))
+    return { label: "Complete", className: "bg-ink-100 text-ink-400" };
+  if (s.includes("confirm"))
+    return { label: "Confirmed", className: "bg-ink-200 text-ink-600" };
+  if (s.includes("released"))
+    return { label: "Released", className: "bg-yellow-100 text-yellow-700" };
+  return { label: stage || "Active", className: "bg-ink-100 text-ink-600" };
+}
+
+function DrafterDashboard() {
+  const { user } = useAuth();
+  const [jobs, setJobs] = useState<DrafterJobView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const firstName = user?.name?.split(" ")[0] || "there";
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<DrafterJobView[]>("/jobs")
+      .then((data) => {
+        if (alive) {
+          setJobs(data || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const activeJobs = jobs.filter(
+    (j) => !["complete", "delivered", "completed"].includes((j.stage || "").toLowerCase())
+  );
+  const completeJobs = jobs.filter(
+    (j) => ["complete", "delivered", "completed"].includes((j.stage || "").toLowerCase())
+  );
+  const displayJobs = [...activeJobs, ...completeJobs].slice(0, 10);
+
+  return (
+    <div className="page pb-28">
+      <DrafterHeader name={firstName} jobCount={loading ? undefined : jobs.length} />
+
+      <section>
+        <SectionHeading
+          action={
+            <Link href="/jobs" className="text-xs font-medium text-brand-orange">
+              View all
+            </Link>
+          }
+        >
+          My jobs
+        </SectionHeading>
+
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-20 animate-pulse rounded-card bg-ink-100" />
+            ))}
+          </div>
+        ) : displayJobs.length === 0 ? (
+          <div className="rounded-card border border-ink-200 p-6 text-center text-sm text-ink-400">
+            No jobs assigned yet.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {displayJobs.map((j) => {
+              const stageMeta = drafterStageMeta(j.stage);
+              const isComplete = ["complete", "delivered", "completed"].includes(
+                (j.stage || "").toLowerCase()
+              );
+              const briefOk =
+                j.brief_status === "checked" || j.brief_status === "uploaded";
+              const hasVariation = (j.variation_count || 0) > 0;
+              const title = j.projectName || j.client || "Unnamed job";
+              const jobLabel = j.jobNum ? `#${j.jobNum}` : `#${j.id.slice(0, 6)}`;
+
+              return (
+                <Link
+                  key={j.id}
+                  href={`/jobs/${j.id}`}
+                  className={`card-interactive flex items-center justify-between gap-3 p-4 ${
+                    isComplete ? "opacity-60" : ""
+                  }`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-ink-400">{jobLabel}</span>
+                      <span className="text-[11px] text-ink-300">·</span>
+                      <span className="truncate text-sm font-semibold text-ink-900">{title}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${stageMeta.className}`}
+                      >
+                        {stageMeta.label}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                          briefOk
+                            ? "bg-green-100 text-green-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {j.brief_status === "checked"
+                          ? "✓ checked"
+                          : j.brief_status === "uploaded"
+                          ? "✓ uploaded"
+                          : "pending brief"}
+                      </span>
+                      {hasVariation && (
+                        <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">
+                          {j.variation_count} variation{j.variation_count === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <Icon name="chevronRight" size={16} className="shrink-0 text-ink-300" />
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
