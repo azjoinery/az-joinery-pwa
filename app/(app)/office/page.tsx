@@ -102,16 +102,6 @@ const CAN_ORDER = new Set([
   "managing_director",
 ]);
 
-type OfficeTab = "sales" | "invoices" | "purchasing" | "accounts" | "analytics";
-
-const EXEC_TABS: { key: OfficeTab; label: string }[] = [
-  { key: "sales",      label: "Sales" },
-  { key: "invoices",   label: "Invoices" },
-  { key: "purchasing", label: "Purchasing" },
-  { key: "accounts",   label: "Accounts" },
-  { key: "analytics",  label: "Analytics" },
-];
-
 const STATUS_STYLE: Record<string, string> = {
   paid:    "bg-green-50 text-green-700 border-green-200",
   overdue: "bg-red-50 text-red-700 border-red-200",
@@ -123,66 +113,23 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function OfficePage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<OfficeTab>("purchasing");
 
   if (!user) return null;
 
-  const isExec = EXECUTIVE_ROLES.has(user.role);
   const canOrder = CAN_ORDER.has(user.role);
 
-  // Non-executive roles (Office / Purchasing staff) see the queue directly.
-  if (!isExec) {
-    return (
-      <div className="page pb-28">
-        <div className="mb-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">
-            Office
-          </p>
-          <h1 className="page-title mt-1">Purchasing</h1>
-          <p className="mt-1 text-sm text-ink-500">
-            Everything released jobs still need — grouped by supplier.
-          </p>
-        </div>
-        <PurchasingContent canOrder={canOrder} />
-      </div>
-    );
-  }
-
-  // Executive roles see a 5-tab view.
   return (
     <div className="page pb-28">
       <div className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">
           Office
         </p>
-        <h1 className="page-title mt-1">Office</h1>
+        <h1 className="page-title mt-1">Purchasing</h1>
+        <p className="mt-1 text-sm text-ink-500">
+          Everything released jobs still need — grouped by supplier.
+        </p>
       </div>
-
-      {/* Tab bar — scrollable on narrow screens */}
-      <div className="-mx-4 mb-6 overflow-x-auto px-4 md:-mx-8 md:px-8">
-        <div className="flex min-w-max gap-1 rounded-xl bg-ink-100 p-1">
-          {EXEC_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-                activeTab === tab.key
-                  ? "bg-white text-ink-900 shadow-sm"
-                  : "text-ink-500 hover:text-ink-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      {activeTab === "purchasing" && <PurchasingContent canOrder={canOrder} />}
-      {activeTab === "sales"      && <SalesView />}
-      {activeTab === "invoices"   && <InvoicesView />}
-      {activeTab === "accounts"   && <AccountsView />}
-      {activeTab === "analytics"  && <AnalyticsView />}
+      <PurchasingContent canOrder={canOrder} />
     </div>
   );
 }
