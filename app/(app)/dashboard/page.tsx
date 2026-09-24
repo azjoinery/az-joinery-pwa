@@ -411,6 +411,12 @@ interface StockPick {
   category?: string;
 }
 
+const STAGE_ORDER = ["Not Started", "Materials In", "CNC Cut", "Assembling", "Hardware Fitted", "QA Passed"];
+function stageRank(stage?: string): number {
+  const idx = STAGE_ORDER.indexOf(stage || "Not Started");
+  return idx >= 0 ? idx : 0;
+}
+
 function pickDept(stk?: StockPick): "cnc" | "hardware" {
   const t = ((stk?.stockType || "") + " " + (stk?.category || "")).toLowerCase();
   if (
@@ -466,6 +472,7 @@ function FloorLogDashboard() {
   const [jobList, setJobList] = useState<{
     id: string; jobNum?: string; client?: string; projectName?: string;
     assignedStaff?: string; status?: string; currentStatus?: string; dueDate?: string;
+    productionStage?: string;
   }[]>([]);
 
   // Top-level job selector — drives CNC & Hardware display
@@ -510,6 +517,35 @@ function FloorLogDashboard() {
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  /* ── pre-load job materials when a job is selected ── */
+  useEffect(() => {
+    if (!selectedJobId) return;
+    // Skip if this job's materials are already in state (from today's entry load or a prior selection)
+    if (materialsRef.current.some(m => m.jobId === selectedJobId)) return;
+    api.get<any[]>(`/jobs/${selectedJobId}/materials`).then((jobMats) => {
+      const toAdd = (jobMats || [])
+        .filter((m: any) => !["received", "confirmed"].includes(m.materialStatus || ""))
+        .map((m: any) => ({
+          stockItemId: m.stockItemId || m.linked_stock_item_id || "",
+          jobId: selectedJobId,
+          qty: 0,
+          wastageQty: 0,
+          assignedQty: m.requiredQty || m.quantity || 1,
+          assignedByName: "Pre-loaded from job",
+          description: m.description,
+        }))
+        .filter((m: any) => m.stockItemId);
+      if (toAdd.length) {
+        setMaterials(prev => {
+          const seen = new Set(prev.map(m => m.stockItemId + "|" + (m.jobId || "")));
+          const newItems = toAdd.filter((m: any) => !seen.has(m.stockItemId + "|" + m.jobId));
+          return newItems.length ? [...prev, ...newItems] : prev;
+        });
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId]);
 
   const loadTodayEntry = async () => {
     try {
@@ -653,6 +689,39 @@ function FloorLogDashboard() {
           }),
         ])
       );
+
+      // Advance CNC stage for jobs where CNC boards were logged today (forward-only)
+      const cncJobIds = [...new Set(
+        materials
+          .filter(m => m.jobId && pickDept(stockList.find(s => s.id === m.stockItemId)) === "cnc" && (m.qty || 0) > 0)
+          .map(m => m.jobId!)
+      )].filter(id => {
+        const job = jobList.find(j => j.id === id);
+        return stageRank(job?.productionStage) < stageRank("CNC Cut");
+      });
+
+      // Advance Assembling stage for jobs with assembly counts in progress but not yet done (forward-only)
+      const assemblingJobIds = Object.entries(asmCounts)
+        .filter(([id, counts]) => {
+          const total = Object.values(counts as Record<string, number>).reduce((a, b) => a + b, 0);
+          return total > 0 && !asmDone[id];
+        })
+        .map(([id]) => id)
+        .filter(id => {
+          const job = jobList.find(j => j.id === id);
+          return stageRank(job?.productionStage) < stageRank("Assembling");
+        });
+
+      if (cncJobIds.length || assemblingJobIds.length) {
+        await Promise.allSettled([
+          ...cncJobIds.map(jobId =>
+            (api as any).patch(`/jobs/${jobId}/production-stage`, { stage: "CNC Cut" })
+          ),
+          ...assemblingJobIds.map(jobId =>
+            (api as any).patch(`/jobs/${jobId}/production-stage`, { stage: "Assembling" })
+          ),
+        ]);
+      }
 
       setOk(true);
       setMessage(cleanMaterials.length > 0 ? "Daily log saved — stock updated." : "Daily log saved.");
