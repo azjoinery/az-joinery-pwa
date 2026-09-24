@@ -773,14 +773,10 @@ function FloorLogDashboard() {
     currentStatus?: string;
     dueDate?: string;
   }[]>([]);
-  const [progressMap, setProgressMap] = useState<Record<string, { progress: number; stage: string }>>({});
-
-  const [matsTab, setMatsTab] = useState<"assigned" | "record">("record");
-  const [recordJobId, setRecordJobId] = useState<string>("");
+  const [selectedJobId, setSelectedJobId] = useState<string>("");
+  const [asmOpen, setAsmOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<null | {
-    target: "assigned" | "record";
-    jobId?: string;
-    dept?: "cnc" | "hardware";
+    dept: "cnc" | "hardware";
   }>(null);
   const [pickerQ, setPickerQ] = useState("");
   const [assemblyJobId, setAssemblyJobId] = useState<string>("");
@@ -806,12 +802,6 @@ function FloorLogDashboard() {
     api.get<StockPick[]>("/stock/items?active=true")
       .then((rows) => setStockList(rows || [])).catch(() => {});
     api.get<any[]>("/jobs").then((rows) => setJobList(rows || [])).catch(() => {});
-    api.get<Array<{ id: string; progress: number; stage: string }>>("/jobs/progress")
-      .then((rows) => {
-        const map: Record<string, { progress: number; stage: string }> = {};
-        (rows || []).forEach((r) => { if (r.id) map[r.id] = r; });
-        setProgressMap(map);
-      }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -853,7 +843,7 @@ function FloorLogDashboard() {
   };
 
   const addMaterialFromCatalogue = (matId: string) => {
-    const jobId = pickerOpen?.jobId || (pickerOpen?.target === "record" ? recordJobId : "");
+    const jobId = selectedJobId;
     const already = materials.findIndex(
       (m) => m.stockItemId === matId && (m.jobId || "") === jobId
     );
@@ -925,99 +915,60 @@ function FloorLogDashboard() {
     }
   };
 
-  // Total units tapped today (assembly only — materials are tracked separately)
+  // Total units built today (assembly counts)
   const assemblyTotal = Object.values(counts).reduce((a, b) => a + b, 0);
 
   const firstName = user?.name?.split(" ")[0] ?? "";
 
-  const floorJobs = jobList.filter((job) => {
-    const status = `${job.status || ""} ${job.currentStatus || ""}`.toLowerCase();
-    if (/completed|delivered|done/.test(status)) return false;
-    if (user?.role === "supervisor") return true;
-    return job.assignedStaff === user?.id || job.assignedStaff === user?.name;
-  });
+  const hasAssignedMats = materials
+    .filter((m) => (m.jobId || "") === selectedJobId)
+    .some((m) => (m.assignedQty || 0) > 0);
 
   return (
     <>
-      {/* Extra bottom padding for the fixed submit bar */}
       <div className="page pb-32">
 
-        {/* Compact header — loads instantly, no photo */}
+        {/* Compact header */}
         <FloorHeader name={firstName} total={assemblyTotal} />
 
-        {/* ── Build queue ── */}
-        {floorJobs.length > 0 && (
-          <section className="mb-6">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="section-title">Your build queue</h2>
-              <span className="rounded-md border border-ink-200 bg-ink-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
-                {floorJobs.length} job{floorJobs.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="space-y-3">
-              {floorJobs.map((job) => {
-                const prog = progressMap[job.id];
-                const pct = prog?.progress ?? 0;
-                const isDone = pct >= 100;
-                const isBuilding = pct > 0 && !isDone;
-                const barColor = isDone ? "#16a34a" : isBuilding ? "#F5822A" : "#d1d5db";
-                return (
-                  <a
-                    key={job.id}
-                    href="/queue"
-                    className="block rounded-xl border border-ink-200 bg-white p-4 active:bg-ink-50"
-                  >
-                    <div className="mb-2 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-ink-900">
-                          {[job.jobNum && `#${job.jobNum}`, job.client || job.projectName || "Job"]
-                            .filter(Boolean)
-                            .join(" — ")}
-                        </div>
-                        {job.dueDate && (
-                          <div className="mt-0.5 text-xs text-ink-400">
-                            Due{" "}
-                            {new Date(job.dueDate).toLocaleDateString("en-AU", {
-                              day: "numeric",
-                              month: "short",
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      <span
-                        className="shrink-0 font-heading text-sm font-bold tabular-nums"
-                        style={{ color: isDone ? "#16a34a" : isBuilding ? "#F5822A" : "#9ca3af" }}
-                      >
-                        {pct}%
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100">
-                      <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
-                      />
-                    </div>
-                    {prog?.stage && (
-                      <div className="mt-1 text-[10px] font-medium capitalize text-ink-400">
-                        {prog.stage === "done"
-                          ? "✓ Built"
-                          : `Building — ${prog.stage.replace(/_/g, " ")}`}
-                      </div>
-                    )}
-                  </a>
-                );
-              })}
-            </div>
-            <a
-              href="/queue"
-              className="mt-3 block text-center text-xs font-semibold text-brand-orange"
-            >
-              Full build queue →
-            </a>
-          </section>
+        {/* ── Job selector ── */}
+        <div className="mb-4 rounded-xl border border-ink-200 bg-white p-4">
+          <label className="mb-1.5 block text-xs font-semibold text-ink-500">
+            Job
+          </label>
+          <select
+            value={selectedJobId}
+            onChange={(e) => setSelectedJobId(e.target.value)}
+            className="input w-full"
+          >
+            <option value="">— no job (general workshop use) —</option>
+            {jobList.map((j) => (
+              <option key={j.id} value={j.id}>
+                {[j.jobNum && `#${j.jobNum}`, j.client || j.projectName]
+                  .filter(Boolean)
+                  .join(" — ") || j.id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ── Materials banner ── */}
+        {selectedJobId && (
+          <div
+            className={`mb-4 flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-semibold ${
+              hasAssignedMats
+                ? "bg-green-50 text-green-800"
+                : "bg-amber-50 text-amber-800"
+            }`}
+          >
+            <span className="text-base">{hasAssignedMats ? "✓" : "⚠"}</span>
+            {hasAssignedMats
+              ? "Full materials ready"
+              : "Partial materials — production can start"}
+          </div>
         )}
 
-        {/* ── Materials — Live (CNC + Hardware) ── */}
+        {/* ── Materials — Live header ── */}
         <div className="mb-2 flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-500">
             Materials — live
@@ -1038,62 +989,14 @@ function FloorLogDashboard() {
           )}
         </div>
 
-        {/* Assigned / Record tab */}
-        <div className="mb-4 flex gap-1 rounded-xl bg-ink-100 p-1">
-          <button
-            type="button"
-            onClick={() => setMatsTab("assigned")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-              matsTab === "assigned"
-                ? "bg-white text-ink-900 shadow-sm"
-                : "text-ink-500"
-            }`}
-          >
-            Assigned
-          </button>
-          <button
-            type="button"
-            onClick={() => setMatsTab("record")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-              matsTab === "record"
-                ? "bg-white text-ink-900 shadow-sm"
-                : "text-ink-500"
-            }`}
-          >
-            Record
-          </button>
-        </div>
-
-        {matsTab === "record" && (
-          <div className="mb-4">
-            <label className="mb-1.5 block text-xs font-semibold text-ink-500">
-              Job (optional)
-            </label>
-            <select
-              value={recordJobId}
-              onChange={(e) => setRecordJobId(e.target.value)}
-              className="input w-full"
-            >
-              <option value="">— no job (general workshop use) —</option>
-              {jobList.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {[j.jobNum, j.client || j.projectName].filter(Boolean).join(" — ") || j.id}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         {/* CNC boards */}
         {(() => {
-          const jobKey = recordJobId || "";
           const rows = materials
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
               const stk = stockList.find((s) => s.id === m.stockItemId);
               if (pickDept(stk) !== "cnc") return false;
-              if (matsTab === "assigned") return !!m.jobId;
-              return (m.jobId || "") === jobKey;
+              return (m.jobId || "") === selectedJobId;
             });
           return (
             <section className="mb-6">
@@ -1105,15 +1008,12 @@ function FloorLogDashboard() {
               </div>
               {rows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
-                  {matsTab === "assigned"
-                    ? "No boards assigned to you today."
-                    : "No boards yet."}
+                  No boards yet.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {rows.map(({ m, i }) => {
                     const stk = stockList.find((s) => s.id === m.stockItemId);
-                    const job = jobList.find((j) => j.id === m.jobId);
                     const low =
                       stk &&
                       typeof stk.on_hand_qty === "number" &&
@@ -1122,20 +1022,14 @@ function FloorLogDashboard() {
                       <MaterialRow
                         key={`cnc${i}`}
                         name={stk?.name || "Material"}
-                        detail={
-                          matsTab === "assigned" && job
-                            ? [job.jobNum, job.client || job.projectName]
-                                .filter(Boolean)
-                                .join(" · ")
-                            : [
-                                stk?.unit,
-                                typeof stk?.on_hand_qty === "number"
-                                  ? `${stk.on_hand_qty} on hand`
-                                  : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")
-                        }
+                        detail={[
+                          stk?.unit,
+                          typeof stk?.on_hand_qty === "number"
+                            ? `${stk.on_hand_qty} on hand`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                         low={!!low}
                         assignedQty={m.assignedQty}
                         assignedByName={m.assignedByName}
@@ -1144,38 +1038,34 @@ function FloorLogDashboard() {
                         onMinus={() => bumpMaterial(i, -1)}
                         onPlus={() => bumpMaterial(i, 1)}
                         onQtyChange={(v) => setMaterialQty(i, v)}
-                        showAssigned={matsTab === "assigned"}
+                        showAssigned={false}
                       />
                     );
                   })}
                 </div>
               )}
-              {matsTab === "record" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPickerOpen({ target: "record", dept: "cnc" });
-                    setPickerQ("");
-                  }}
-                  className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
-                >
-                  + Add board from stock
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setPickerOpen({ dept: "cnc" });
+                  setPickerQ("");
+                }}
+                className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
+              >
+                + Add board from stock
+              </button>
             </section>
           );
         })()}
 
         {/* Hardware fitted */}
         {(() => {
-          const jobKey = recordJobId || "";
           const rows = materials
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
               const stk = stockList.find((s) => s.id === m.stockItemId);
               if (pickDept(stk) !== "hardware") return false;
-              if (matsTab === "assigned") return !!m.jobId;
-              return (m.jobId || "") === jobKey;
+              return (m.jobId || "") === selectedJobId;
             });
           return (
             <section className="mb-6">
@@ -1187,15 +1077,12 @@ function FloorLogDashboard() {
               </div>
               {rows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
-                  {matsTab === "assigned"
-                    ? "No hardware assigned to you today."
-                    : "No hardware yet."}
+                  No hardware yet.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {rows.map(({ m, i }) => {
                     const stk = stockList.find((s) => s.id === m.stockItemId);
-                    const job = jobList.find((j) => j.id === m.jobId);
                     const low =
                       stk &&
                       typeof stk.on_hand_qty === "number" &&
@@ -1204,20 +1091,14 @@ function FloorLogDashboard() {
                       <MaterialRow
                         key={`hw${i}`}
                         name={stk?.name || "Material"}
-                        detail={
-                          matsTab === "assigned" && job
-                            ? [job.jobNum, job.client || job.projectName]
-                                .filter(Boolean)
-                                .join(" · ")
-                            : [
-                                stk?.unit,
-                                typeof stk?.on_hand_qty === "number"
-                                  ? `${stk.on_hand_qty} on hand`
-                                  : null,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")
-                        }
+                        detail={[
+                          stk?.unit,
+                          typeof stk?.on_hand_qty === "number"
+                            ? `${stk.on_hand_qty} on hand`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                         low={!!low}
                         assignedQty={m.assignedQty}
                         assignedByName={m.assignedByName}
@@ -1226,194 +1107,145 @@ function FloorLogDashboard() {
                         onMinus={() => bumpMaterial(i, -1)}
                         onPlus={() => bumpMaterial(i, 1)}
                         onQtyChange={(v) => setMaterialQty(i, v)}
-                        showAssigned={matsTab === "assigned"}
+                        showAssigned={false}
                       />
                     );
                   })}
                 </div>
               )}
-              {matsTab === "record" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPickerOpen({ target: "record", dept: "hardware" });
-                    setPickerQ("");
-                  }}
-                  className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
-                >
-                  + Add hardware from stock
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setPickerOpen({ dept: "hardware" });
+                  setPickerQ("");
+                }}
+                className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
+              >
+                + Add hardware from stock
+              </button>
             </section>
           );
         })()}
 
-        {/* ── Assembly in materials view — summary card ── */}
-        {(() => {
-          const jobKey = recordJobId || "";
-          const hasAny = Object.values(counts).some((v) => v > 0);
-          const jobMatch =
-            matsTab === "assigned"
-              ? hasAny && !!assemblyJobId
-              : hasAny && assemblyJobId === jobKey;
-          if (!jobMatch) return null;
-          const aJob = jobList.find((j) => j.id === assemblyJobId);
-          const aTotal = Object.values(counts).reduce((a, b) => a + b, 0);
-          return (
-            <section className="mb-6">
-              <div className="mb-3">
-                <h2 className="section-title">Assembly — this job</h2>
-                <p className="mt-0.5 text-xs text-ink-400">
-                  {aJob
-                    ? [aJob.jobNum && `#${aJob.jobNum}`, aJob.client || aJob.projectName]
+        {/* ── Assembly — collapsible accordion ── */}
+        <section className="mb-6">
+          <button
+            type="button"
+            onClick={() => setAsmOpen((v) => !v)}
+            className="mb-3 flex w-full items-center justify-between"
+          >
+            <div className="text-left">
+              <h2 className="section-title">Assembly</h2>
+              <p className="mt-0.5 text-xs text-ink-400">
+                Cabinets built today — no stock impact.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {assemblyTotal > 0 && (
+                <span className="rounded-full bg-brand-orange/10 px-2 py-0.5 text-[11px] font-bold text-brand-orange">
+                  {assemblyTotal}
+                </span>
+              )}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                className={`shrink-0 text-ink-400 transition-transform ${asmOpen ? "rotate-180" : ""}`}
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+          </button>
+
+          {asmOpen && (
+            <div className="space-y-2">
+              {/* Job selector inside assembly */}
+              <div className="mb-3 rounded-xl border border-ink-200 bg-white p-4">
+                <label className="mb-1.5 block text-xs font-semibold text-ink-500">
+                  Job (for invoicing + installer payment)
+                </label>
+                <select
+                  value={assemblyJobId}
+                  onChange={(e) => setAssemblyJobId(e.target.value)}
+                  className="input w-full"
+                >
+                  <option value="">— general / no specific job —</option>
+                  {jobList.map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {[j.jobNum && `#${j.jobNum}`, j.client || j.projectName]
                         .filter(Boolean)
-                        .join(" · ")
-                    : "General workshop"}
-                </p>
+                        .join(" — ") || j.id}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="rounded-xl border border-ink-200 bg-white p-4">
-                <div className="grid grid-cols-3 gap-x-6 gap-y-2.5">
-                  {cabinetTypes
-                    .filter((t) => (counts[t.key] || 0) > 0)
-                    .map((t) => (
-                      <div key={t.key} className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-ink-500">{t.label}</span>
-                        <span className="font-heading text-sm font-bold tabular-nums text-brand-orange">
-                          {counts[t.key]}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-3">
-                  <span className="text-xs font-semibold text-ink-500">Total units</span>
-                  <span className="font-heading text-base font-bold tabular-nums text-ink-900">
-                    {aTotal}
-                  </span>
-                </div>
-                {assemblyDone && (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-green-700">
+
+              {/* Cabinet count rows */}
+              {cabinetTypes.map((type) => (
+                <CountRow
+                  key={type.key}
+                  label={type.label}
+                  value={counts[type.key] || 0}
+                  onMinus={() => decrement(type.key)}
+                  onPlus={() => increment(type.key)}
+                  onQtyChange={(v) => setCounterValue(type.key, v)}
+                />
+              ))}
+
+              {/* Mark assembly as done */}
+              <button
+                type="button"
+                onClick={() => setAssemblyDone((v) => !v)}
+                className={`mt-1 flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors active:scale-[0.98] ${
+                  assemblyDone
+                    ? "border-green-300 bg-green-50"
+                    : "border-ink-200 bg-white"
+                }`}
+              >
+                <span
+                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition-colors ${
+                    assemblyDone
+                      ? "border-green-500 bg-green-500"
+                      : "border-ink-300 bg-white"
+                  }`}
+                >
+                  {assemblyDone && (
                     <svg
-                      width="13"
-                      height="13"
+                      width="12"
+                      height="12"
                       viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
+                      stroke="white"
+                      strokeWidth="3"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       fill="none"
                     >
                       <path d="M20 6L9 17l-5-5" />
                     </svg>
-                    Assembly complete
-                  </div>
-                )}
-              </div>
-            </section>
-          );
-        })()}
-
-        {/* ── Assembly — job selector + 3×2 grid + done tick ── */}
-        <section className="mb-6">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <h2 className="section-title">Assembly</h2>
-              <p className="mt-0.5 text-xs text-ink-400">
-                Cabinets built today — no stock impact.
-              </p>
+                  )}
+                </span>
+                <div>
+                  <p
+                    className={`text-sm font-semibold ${
+                      assemblyDone ? "text-green-700" : "text-ink-700"
+                    }`}
+                  >
+                    {assemblyDone
+                      ? "Assembly marked as done ✓"
+                      : "Mark assembly as done"}
+                  </p>
+                  <p className="text-xs text-ink-400">
+                    Confirms all cabinets built — used for installer payment &amp; invoicing
+                  </p>
+                </div>
+              </button>
             </div>
-            {assemblyDone ? (
-              <span className="rounded-md border border-green-300 bg-green-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-700">
-                Done
-              </span>
-            ) : (
-              <span className="rounded-md border border-ink-200 bg-ink-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
-                Draft
-              </span>
-            )}
-          </div>
-
-          {/* Job selector */}
-          <div className="mb-4">
-            <label className="mb-1.5 block text-xs font-semibold text-ink-500">
-              Job (for invoicing + installer payment)
-            </label>
-            <select
-              value={assemblyJobId}
-              onChange={(e) => setAssemblyJobId(e.target.value)}
-              className="input w-full"
-            >
-              <option value="">— general / no specific job —</option>
-              {jobList.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {[j.jobNum && `#${j.jobNum}`, j.client || j.projectName]
-                    .filter(Boolean)
-                    .join(" — ") || j.id}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 3×2 counter grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {cabinetTypes.map((type) => (
-              <Counter
-                key={type.key}
-                label={type.label}
-                value={counts[type.key] || 0}
-                onIncrement={() => increment(type.key)}
-                onDecrement={() => decrement(type.key)}
-                onChange={(v) => setCounterValue(type.key, v)}
-              />
-            ))}
-          </div>
-
-          {/* Done tick — manual confirmation once assembly is finished */}
-          <button
-            type="button"
-            onClick={() => setAssemblyDone((v) => !v)}
-            className={`mt-4 flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors active:scale-[0.98] ${
-              assemblyDone
-                ? "border-green-300 bg-green-50"
-                : "border-ink-200 bg-white"
-            }`}
-          >
-            <span
-              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition-colors ${
-                assemblyDone
-                  ? "border-green-500 bg-green-500"
-                  : "border-ink-300 bg-white"
-              }`}
-            >
-              {assemblyDone && (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  stroke="white"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                >
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              )}
-            </span>
-            <div>
-              <p
-                className={`text-sm font-semibold ${
-                  assemblyDone ? "text-green-700" : "text-ink-700"
-                }`}
-              >
-                {assemblyDone
-                  ? "Assembly marked as done ✓"
-                  : "Mark assembly as done"}
-              </p>
-              <p className="text-xs text-ink-400">
-                Confirms all cabinets built — used for installer payment &amp; invoicing
-              </p>
-            </div>
-          </button>
+          )}
         </section>
 
         {/* Notes */}
@@ -1463,7 +1295,7 @@ function FloorLogDashboard() {
             style={{ minHeight: "3rem" }}
           >
             <Icon name="uploads" size={18} />
-            {saving ? "Saving…" : "Submit assembly + notes"}
+            {saving ? "Saving…" : "Submit log"}
           </button>
         </div>
         <p className="mt-2 text-center text-[11px] text-ink-400">
@@ -1483,11 +1315,7 @@ function FloorLogDashboard() {
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-200 sm:hidden" />
             <div className="mb-2 text-base font-semibold text-ink-900">
-              {pickerOpen.dept === "hardware"
-                ? "Pick hardware"
-                : pickerOpen.dept === "cnc"
-                ? "Pick a board"
-                : "Pick a material"}
+              {pickerOpen.dept === "hardware" ? "Pick hardware" : "Pick a board"}
             </div>
             <input
               type="search"
@@ -1500,7 +1328,7 @@ function FloorLogDashboard() {
             <div className="max-h-72 overflow-y-auto">
               {(() => {
                 const filtered = stockList
-                  .filter((s) => !pickerOpen.dept || pickDept(s) === pickerOpen.dept)
+                  .filter((s) => pickDept(s) === pickerOpen.dept)
                   .filter(
                     (s) =>
                       !pickerQ ||
@@ -1509,13 +1337,7 @@ function FloorLogDashboard() {
                 if (filtered.length === 0) {
                   return (
                     <div className="p-6 text-center text-sm text-ink-400">
-                      No{" "}
-                      {pickerOpen.dept === "hardware"
-                        ? "hardware"
-                        : pickerOpen.dept === "cnc"
-                        ? "boards"
-                        : "materials"}{" "}
-                      match.
+                      No {pickerOpen.dept === "hardware" ? "hardware" : "boards"} match.
                     </div>
                   );
                 }
@@ -1635,79 +1457,52 @@ function MaterialRow({
   );
 }
 
-// ─── Counter — assembly cabinet types ────────────────────────────────────────
+// ─── CountRow — compact assembly cabinet counter (replaces Counter grid cards) ──
 
-function Counter({
+function CountRow({
   label,
   value,
-  onIncrement,
-  onDecrement,
-  onChange,
+  onMinus,
+  onPlus,
+  onQtyChange,
 }: {
   label: string;
   value: number;
-  onIncrement: () => void;
-  onDecrement: () => void;
-  onChange: (value: number) => void;
+  onMinus: () => void;
+  onPlus: () => void;
+  onQtyChange: (v: number) => void;
 }) {
   return (
-    <div className="card flex flex-col gap-3 px-4 py-4">
-      <div className="flex items-start justify-between gap-1">
-        <span className="text-sm font-semibold leading-snug text-ink-800">
-          {label}
-        </span>
-        {value > 0 && (
-          <span className="shrink-0 rounded-full bg-brand-orange/10 px-2 py-0.5 text-[11px] font-bold text-brand-orange">
-            {value}
-          </span>
-        )}
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-ink-200 bg-white p-3">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-ink-900">{label}</div>
+        <div className="text-xs text-ink-500">Cabinet count · no stock impact</div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1 rounded-xl bg-ink-100 p-1">
         <button
-          onClick={onDecrement}
-          disabled={value === 0}
-          aria-label={`Decrease ${label}`}
-          className="grid h-14 w-14 shrink-0 place-items-center rounded-xl border border-ink-200 bg-white text-2xl font-light text-ink-600 transition active:scale-95 disabled:opacity-30"
+          type="button"
+          onClick={onMinus}
+          disabled={value <= 0}
+          className="grid h-12 w-12 place-items-center rounded-lg bg-white text-2xl font-bold text-ink-700 shadow-sm disabled:opacity-30 active:scale-95"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          >
-            <path d="M5 12h14" />
-          </svg>
+          −
         </button>
         <input
           type="number"
           min="0"
           step="1"
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          aria-label={`${label} quantity`}
-          className={`h-14 flex-1 rounded-xl border bg-white text-center font-heading text-3xl font-bold tabular-nums outline-none transition-colors focus:border-brand-orange ${
-            value > 0
-              ? "border-brand-orange/40 text-brand-orange"
-              : "border-ink-200 text-ink-300"
+          onChange={(e) => onQtyChange(Number(e.target.value))}
+          className={`h-12 w-14 rounded-lg border bg-white text-center font-heading text-lg font-bold tabular-nums text-ink-900 outline-none focus:border-brand-orange ${
+            value > 0 ? "border-brand-orange/40 text-brand-orange" : "border-ink-200"
           }`}
         />
         <button
-          onClick={onIncrement}
-          aria-label={`Increase ${label}`}
-          className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-brand-orange text-white transition active:scale-95 active:bg-brand-orange-dark"
+          type="button"
+          onClick={onPlus}
+          className="grid h-12 w-12 place-items-center rounded-lg bg-brand-orange text-white text-2xl font-bold shadow-sm active:scale-95 active:bg-brand-orange-dark"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          +
         </button>
       </div>
     </div>
