@@ -1221,7 +1221,10 @@ function ManagementJobsWorkspace({ canManage, canCreate }: { canManage: boolean;
       </div>
 
       {/* Scrollable tab bar — safe on narrow phones */}
-      <div className="-mx-4 overflow-x-auto px-4 mb-5">
+      {/* mb-0 on the Design tab: DesignWorkspace provides its own top padding, so
+          stacking mb-5 + internal page padding created an oversized gap. Office and
+          Production tabs have no internal top padding, so they still need mb-5. */}
+      <div className={`-mx-4 overflow-x-auto px-4 ${tab === "design" ? "mb-0" : "mb-5"}`}>
         <div className="tabs min-w-max">
           {WORKSPACE_TABS.map(t => (
             <button
