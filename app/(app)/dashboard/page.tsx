@@ -636,16 +636,22 @@ function FloorLogDashboard() {
         asmCounts, asmDone,
       });
 
-      // Move done-assembly jobs to "ready_to_deliver" on the Kanban
+      // Move done-assembly jobs to "ready_to_deliver" on the Kanban.
+      // Two PATCHes per job:
+      //   1. job status field  → "ready_to_deliver"
+      //   2. production stage  → "Hardware Fitted"  (moves the Kanban card)
       const doneJobIds = Object.keys(asmDone).filter((id) => asmDone[id]);
       await Promise.allSettled(
-        doneJobIds.map((jobId) =>
+        doneJobIds.flatMap((jobId) => [
           (api as any).patch(`/jobs/${jobId}`, {
             status: "ready_to_deliver",
             assembly_counts: asmCounts[jobId] || {},
             assembly_done: true,
-          })
-        )
+          }),
+          (api as any).patch(`/jobs/${jobId}/production-stage`, {
+            stage: "Hardware Fitted",
+          }),
+        ])
       );
 
       setOk(true);
