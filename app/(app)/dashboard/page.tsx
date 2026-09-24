@@ -194,15 +194,7 @@ function ExecutiveOverview() {
 
   return (
     <div className="page pb-28">
-      <WorkshopHero eyebrow="Workshop" title={`${execGreeting()}, ${firstName}`} subtitle={execToday()}>
-        <div className="mt-5 flex flex-wrap gap-x-8 gap-y-4">
-          <HeroFigure label="Active jobs" value={totals ? String(totals.activeJobs) : "—"} primary />
-          <HeroFigure label="Overdue" value={totals ? String(totals.overdue) : "—"} />
-          {seesMoney ? (
-            <HeroFigure label="Outstanding" value={money ? execCurrency(money.outstanding) : "—"} />
-          ) : null}
-        </div>
-      </WorkshopHero>
+      <WorkshopHero eyebrow="Workshop" title={`${execGreeting()}, ${firstName}`} subtitle={execToday()} />
 
       {failed ? (
         <div className="mb-6 rounded-card border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
@@ -220,34 +212,27 @@ function ExecutiveOverview() {
         </div>
       </section>
 
-      {/* Needs attention */}
-      <section className="mb-7">
-        <SectionHeading>Needs attention</SectionHeading>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {seesMoney ? (
-            <FlowCard
-              href="/accounts"
-              icon="accounts"
-              title="Money"
-              main={money ? execCurrency(money.outstanding) : "—"}
-              mainLabel="outstanding"
-              detail={
-                money
-                  ? `${money.overdueInvoices} overdue invoice${money.overdueInvoices === 1 ? "" : "s"}`
-                  : "Tap to open accounts"
-              }
-            />
-          ) : null}
-          <FlowCard
-            href="/materials"
-            icon="inventory"
-            title="Office"
-            main={totals ? String(totals.officeJobs) : "—"}
-            mainLabel="jobs short"
-            detail={`${totals?.officeLines ?? 0} lines to order · ${lowStock ?? 0} low stock`}
-          />
-        </div>
-      </section>
+      {/* Outstanding — above pipeline, MD/manager only */}
+      {seesMoney && (
+        <Link
+          href="/accounts"
+          className="mb-5 flex items-center justify-between gap-4 rounded-card bg-emerald-900 px-5 py-4 transition-opacity hover:opacity-90"
+        >
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">
+              Outstanding
+            </p>
+            <p className="mt-1 font-heading text-2xl font-bold tabular tracking-tight text-white">
+              {money ? execCurrency(money.outstanding) : "—"}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">
+            {money
+              ? `${money.overdueInvoices} overdue invoice${money.overdueInvoices === 1 ? "" : "s"}`
+              : "Accounts"}
+          </span>
+        </Link>
+      )}
 
       {/* Job pipeline */}
       <section className="mb-7">
