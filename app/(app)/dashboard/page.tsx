@@ -1165,24 +1165,44 @@ function FloorLogDashboard() {
           {asmOpen && (
             <div className="space-y-2">
               {/* Job selector inside assembly */}
-              <div className="mb-3 rounded-xl border border-ink-200 bg-white p-4">
-                <label className="mb-1.5 block text-xs font-semibold text-ink-500">
-                  Job (for invoicing + installer payment)
-                </label>
-                <select
-                  value={assemblyJobId}
-                  onChange={(e) => setAssemblyJobId(e.target.value)}
-                  className="input w-full"
-                >
-                  <option value="">— general / no specific job —</option>
-                  {jobList.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {[j.jobNum && `#${j.jobNum}`, j.client || j.projectName]
-                        .filter(Boolean)
-                        .join(" — ") || j.id}
-                    </option>
-                  ))}
-                </select>
+              <div className="mb-3 overflow-hidden rounded-xl border border-ink-200 bg-white">
+                <div className="border-b border-ink-100 bg-ink-50 px-4 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500">
+                    Select job
+                  </p>
+                  <p className="text-[11px] text-ink-400">
+                    Used for invoicing + installer payment
+                  </p>
+                </div>
+                <div className="relative px-4 py-3">
+                  <select
+                    value={assemblyJobId}
+                    onChange={(e) => setAssemblyJobId(e.target.value)}
+                    className="w-full appearance-none rounded-lg border border-ink-200 bg-ink-50 py-3 pl-4 pr-10 text-sm font-semibold text-ink-900 outline-none focus:border-brand-orange focus:bg-white"
+                  >
+                    <option value="">— general / no specific job —</option>
+                    {jobList.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {[j.jobNum && `#${j.jobNum}`, j.client || j.projectName]
+                          .filter(Boolean)
+                          .join(" — ") || j.id}
+                      </option>
+                    ))}
+                  </select>
+                  <svg
+                    className="pointer-events-none absolute right-7 top-1/2 -translate-y-1/2 text-ink-400"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </div>
               </div>
 
               {/* Cabinet count rows */}
