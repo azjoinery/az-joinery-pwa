@@ -326,6 +326,8 @@ export default function JobsKanban({ canManage }: { canManage: boolean }) {
 
   useEffect(() => {
     loadJobs();
+    const interval = setInterval(loadJobs, 30_000);
+    return () => clearInterval(interval);
   }, [loadJobs]);
 
   const filteredJobs = jobs.filter(job => {
