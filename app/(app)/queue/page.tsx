@@ -49,8 +49,6 @@ const EXECUTIVE_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin",
 ]);
 
-type ExecTab = "queue" | "inventory" | "materials";
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 type QueueJob = {
   id: string;
@@ -154,7 +152,6 @@ export default function ProductionPage() {
   const canEdit = Boolean(user && CAN_EDIT_TARGETS.has(user.role));
   const isExecutive = Boolean(user && EXECUTIVE_ROLES.has(user.role));
 
-  const [tab, setTab] = useState<ExecTab>("queue");
   const [queue, setQueue] = useState<QueueJob[]>([]);
   const [progress, setProgress] = useState<Record<string, Progress>>({});
   const [loading, setLoading] = useState(true);
@@ -297,45 +294,14 @@ export default function ProductionPage() {
         <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</div>
       ) : null}
 
-      {/* Tab bar — executive roles only */}
-      {isExecutive && (
-        <div className="mb-5 grid grid-cols-3 gap-1 rounded-xl bg-ink-100 p-1">
-          {(["queue", "inventory", "materials"] as ExecTab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`min-h-10 rounded-lg px-1 text-sm font-semibold ${
-                tab === t ? "bg-white text-ink-950 shadow-sm" : "text-ink-500"
-              }`}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Queue tab (or non-executive full view) */}
-      {(!isExecutive || tab === "queue") && (
-        <ProductionQueueView
-          ready={ready}
-          building={building}
-          loading={loading}
-          canEdit={canEdit}
-          advanced={advanced}
-          onProgress={handleProgress}
-        />
-      )}
-
-      {/* Inventory tab */}
-      {isExecutive && tab === "inventory" && (
-        <InventoryView stock={stock} loading={loading} />
-      )}
-
-      {/* Materials tab */}
-      {isExecutive && tab === "materials" && (
-        <MaterialsSummaryView entries={entries} stock={stock} jobs={jobs} loading={loading} />
-      )}
+      <ProductionQueueView
+        ready={ready}
+        building={building}
+        loading={loading}
+        canEdit={canEdit}
+        advanced={advanced}
+        onProgress={handleProgress}
+      />
     </div>
   );
 }
