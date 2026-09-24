@@ -70,7 +70,7 @@ export const PAGES: Record<
 
   // ── Design ─────────────────────────────────────────────────────────
   design:     { href: "/design",     label: "Design",     icon: "design",    group: "Design"      },
-  briefs:     { href: "/briefs",     label: "Briefs",     icon: "document",  group: "Design"      },
+  briefs:     { href: "/briefs",     label: "Briefs",     icon: "tasks",     group: "Design"      },
   variations: { href: "/variations", label: "Variation",  icon: "alert",     group: "Design"      },
 
   // ── Office ─────────────────────────────────────────────────────────
