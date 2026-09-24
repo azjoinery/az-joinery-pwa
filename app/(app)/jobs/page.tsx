@@ -16,9 +16,10 @@
  *   PATCH /jobs/:id/block              → { reason, detail, notify_supervisor, notify_admin, blocked_until }
  *   PATCH /jobs/:id/unblock            → {}
  *   POST  /jobs/:id/materials/record   → { material_id, qty_used, offcut, offcut_dims, notes }
- *   GET   /purchase-orders             → list
- *   POST  /purchase-orders             → { job_id, material_id, supplier, qty }
- *   PATCH /purchase-orders/:id/receive → { items: [{ material_id, qty_received }] }
+ *   GET   /purchase-orders             → list POs
+ *   POST  /purchase-orders             → POIn { supplier, expectedDate, freightCost, notes, lines: POLineIn[] }
+ *   PATCH /purchase-orders/:id         → { status?, expectedDate?, notes? }
+ *   POST  /purchase-orders/:id/receive → GRNIn { lines: [{ lineId, qtyReceived }], receivedDate?, invoiceRef? }
  *   POST  /push/subscribe              → { subscription } (push notification registration)
  */
 
@@ -34,7 +35,7 @@ import DesignWorkspace from "@/app/(app)/design/page";
 type JobStatus   = "Ready" | "In Progress" | "Waiting Material" | "Blocked" | "Done";
 type Priority    = "Low" | "Normal" | "High";
 type StageStatus = "pending" | "active" | "done";
-type POStatus    = "Draft" | "Ordered" | "Partial" | "Received";
+type POStatus    = "draft" | "sent" | "confirmed" | "partial" | "received" | "cancelled";
 type WorkerLoad  = "Low" | "Normal" | "High";
 
 interface Stage   { name: string; status: StageStatus; }
@@ -52,11 +53,11 @@ interface Job {
   activityLog: LogEntry[]; blockReason?: string; blockDetail?: string;
 }
 interface Worker { id: string; name: string; role: string; activeJobs: number; load: WorkerLoad; }
-interface POItem  { material: string; qty: number; received: number; unit: string; }
+interface POLine { id: string; description: string; qty: number; unit: string; qtyReceived: number; stockItemId?: string; unitCost?: number; }
 interface PurchaseOrder {
-  id: string; ref: string; supplier: string; status: POStatus;
-  jobRef: string; jobId: string; items: POItem[];
-  orderedAt?: string; eta?: string; shortageNote?: string;
+  id: string; poNumber: string; supplier: string; status: POStatus;
+  expectedDate?: string; lines: POLine[]; notes?: string;
+  createdBy?: string; createdAt?: string; freightCost?: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -205,23 +206,22 @@ const MOCK_WORKERS: Worker[] = [
 
 const MOCK_POS: PurchaseOrder[] = [
   {
-    id:"po1",ref:"PO-2024-019",supplier:"Bunnings",status:"Ordered",
-    jobRef:"AZJ-0893",jobId:"j3",eta:"Fri 20 Sep",
-    items:[{material:"12mm White Moisture Ply",qty:3,received:0,unit:"sheets"}],
-    orderedAt:new Date(Date.now()-4*3600000).toISOString(),
-    shortageNote:"Unblocks AZJ-0893 once received.",
+    id:"po1", poNumber:"PO-202409-0019", supplier:"Bunnings Warehouse", status:"confirmed",
+    expectedDate: new Date(Date.now()+2*86400000).toISOString().split("T")[0],
+    notes:"AZJ-0893 — unblocks once received.",
+    lines:[{ id:"pol1", description:"12mm White Moisture Ply", qty:3, qtyReceived:0, unit:"sheets" }],
+    createdAt: new Date(Date.now()-4*3600000).toISOString(),
   },
   {
-    id:"po2",ref:"PO-2024-018",supplier:"Häfele",status:"Partial",
-    jobRef:"AZJ-0890",jobId:"j5",eta:"Mon 23 Sep",
-    items:[{material:"Grass Nova Pro runners",qty:10,received:4,unit:"pairs"}],
-    orderedAt:new Date(Date.now()-2*86400000).toISOString(),
+    id:"po2", poNumber:"PO-202409-0018", supplier:"Häfele Australia", status:"partial",
+    expectedDate: new Date(Date.now()+4*86400000).toISOString().split("T")[0],
+    lines:[{ id:"pol2", description:"Grass Nova Pro drawer runners", qty:10, qtyReceived:4, unit:"pairs" }],
+    createdAt: new Date(Date.now()-2*86400000).toISOString(),
   },
   {
-    id:"po3",ref:"PO-2024-017",supplier:"Laminex",status:"Received",
-    jobRef:"AZJ-0895",jobId:"j6",
-    items:[{material:"Laminex Chalk 16mm MDF",qty:6,received:6,unit:"sheets"}],
-    orderedAt:new Date(Date.now()-5*86400000).toISOString(),
+    id:"po3", poNumber:"PO-202409-0017", supplier:"Laminex Group", status:"received",
+    lines:[{ id:"pol3", description:"Laminex Chalk 16mm MDF", qty:6, qtyReceived:6, unit:"sheets" }],
+    createdAt: new Date(Date.now()-5*86400000).toISOString(),
   },
 ];
 
@@ -983,8 +983,13 @@ function SupervisorView() {
 type AdminTab = "Purchase Alerts" | "PO Tracker";
 
 const PO_STATUS_BADGE: Record<POStatus, string> = {
-  "Draft": "badge-neutral", "Ordered": "badge-info",
-  "Partial": "badge-warning", "Received": "badge-success",
+  "draft": "badge-neutral", "sent": "badge-info",
+  "confirmed": "badge-info", "partial": "badge-warning",
+  "received": "badge-success", "cancelled": "badge-neutral",
+};
+const PO_STATUS_LABEL: Record<POStatus, string> = {
+  "draft": "Draft", "sent": "Sent", "confirmed": "Ordered",
+  "partial": "Partial", "received": "Received", "cancelled": "Cancelled",
 };
 
 function OfficeTabContent() {
@@ -992,7 +997,7 @@ function OfficeTabContent() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [poFilter, setPOFilter] = useState<"All" | POStatus>("All");
+  const [poFilter, setPOFilter] = useState<"All" | POStatus | "cancelled">("All");
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [receiveQtys, setReceiveQtys] = useState<Record<string, number>>({});
 
@@ -1010,21 +1015,29 @@ function OfficeTabContent() {
   const shortageJobs = jobs.filter(j => j.status === "Waiting Material" || j.status === "Blocked");
   const filteredPOs  = poFilter === "All" ? pos : pos.filter(p => p.status === poFilter);
 
-  const handleCreatePO = async (jobId: string, materialId: string) => {
+  const handleCreatePO = async (jobId: string, material: string) => {
     try {
-      const po = await api.post<PurchaseOrder>("/purchase-orders", { job_id: jobId, material_id: materialId });
+      // Backend expects POIn: { supplier, expectedDate, freightCost, notes, lines: [{ description, qty, unit }] }
+      const po = await api.post<PurchaseOrder>("/purchase-orders", {
+        supplier: "TBD — update supplier",
+        expectedDate: "",
+        freightCost: 0,
+        notes: `Job ref: ${jobId}`,
+        lines: [{ description: material || "Materials required", qty: 1, unit: "unit", unit_cost: 0 }],
+      });
       setPOs(prev => [po, ...prev]);
     } catch { /* toast in production */ }
   };
 
   const handleReceivePO = async (po: PurchaseOrder) => {
-    const items = po.items.map((item, i) => ({
-      material: item.material,
-      qty_received: receiveQtys[`${po.id}-${i}`] ?? item.qty,
+    // Backend: POST /purchase-orders/:id/receive with GRNIn { lines: [{ lineId, qtyReceived }] }
+    const lines = po.lines.map((line, i) => ({
+      lineId: line.id,
+      qtyReceived: receiveQtys[`${po.id}-${i}`] ?? line.qty,
     }));
     try {
-      await api.patch(`/purchase-orders/${po.id}/receive`, { items });
-      setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "Received" as POStatus } : p));
+      await api.post(`/purchase-orders/${po.id}/receive`, { lines, receivedDate: "", invoiceRef: "" });
+      setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "received" as POStatus } : p));
     } catch { /* handle error */ }
     setReceivingId(null);
   };
@@ -1094,7 +1107,7 @@ function OfficeTabContent() {
         /* PO Tracker */
         <div>
           <div className="flex flex-wrap gap-2 mb-4">
-            {(["All", "Draft", "Ordered", "Partial", "Received"] as const).map(s => (
+            {(["All", "draft", "confirmed", "partial", "received", "cancelled"] as const).map(s => (
               <button
                 key={s}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
@@ -1102,7 +1115,7 @@ function OfficeTabContent() {
                 }`}
                 onClick={() => setPOFilter(s)}
               >
-                {s}
+                {s === "All" ? "All" : PO_STATUS_LABEL[s as POStatus]}
               </button>
             ))}
           </div>
@@ -1114,39 +1127,38 @@ function OfficeTabContent() {
               <div key={po.id} className="card">
                 <div className="card-header">
                   <div className="flex items-center gap-2">
-                    <span className="ref">{po.ref}</span>
-                    <span className={`badge ${PO_STATUS_BADGE[po.status]}`}>{po.status}</span>
+                    <span className="ref">{po.poNumber}</span>
+                    <span className={`badge ${PO_STATUS_BADGE[po.status]}`}>{PO_STATUS_LABEL[po.status]}</span>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-ink-500">
                     <span>{po.supplier}</span>
-                    <span className="ref text-ink-500">{po.jobRef}</span>
+                    {po.expectedDate && <span>ETA {po.expectedDate}</span>}
                   </div>
                 </div>
                 <div className="p-4">
-                  {po.items.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 text-sm border-b border-ink-100 last:border-0">
-                      <span className="text-ink-700">{item.material}</span>
-                      <span className="text-ink-500 tabular">{item.received}/{item.qty} {item.unit}</span>
+                  {po.lines.map((line, i) => (
+                    <div key={line.id || i} className="flex items-center justify-between py-2 text-sm border-b border-ink-100 last:border-0">
+                      <span className="text-ink-700">{line.description}</span>
+                      <span className="text-ink-500 tabular">{line.qtyReceived}/{line.qty} {line.unit}</span>
                     </div>
                   ))}
-                  {po.eta && <p className="text-xs text-ink-500 mt-3">ETA: {po.eta}</p>}
-                  {po.shortageNote && <p className="text-xs text-success-dark mt-1">{po.shortageNote}</p>}
+                  {po.notes && <p className="text-xs text-ink-500 mt-3">{po.notes}</p>}
 
-                  {(po.status === "Ordered" || po.status === "Partial") && (
+                  {(po.status === "confirmed" || po.status === "sent" || po.status === "partial") && (
                     receivingId === po.id ? (
                       <div className="mt-4 flex flex-col gap-3">
                         <p className="eyebrow">Mark received</p>
-                        {po.items.map((item, i) => (
-                          <div key={i} className="field">
-                            <label className="label">{item.material}</label>
+                        {po.lines.map((line, i) => (
+                          <div key={line.id || i} className="field">
+                            <label className="label">{line.description}</label>
                             <div className="flex items-center gap-2">
                               <input
                                 type="number" className="input"
-                                placeholder={`of ${item.qty} ${item.unit}`}
+                                placeholder={`of ${line.qty} ${line.unit}`}
                                 value={receiveQtys[`${po.id}-${i}`] ?? ""}
                                 onChange={e => setReceiveQtys(prev => ({ ...prev, [`${po.id}-${i}`]: Number(e.target.value) }))}
                               />
-                              <span className="text-sm text-ink-500 whitespace-nowrap">{item.unit}</span>
+                              <span className="text-sm text-ink-500 whitespace-nowrap">{line.unit}</span>
                             </div>
                           </div>
                         ))}
