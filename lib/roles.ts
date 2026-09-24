@@ -1,197 +1,186 @@
-"use client";
+// Single source of truth for role-based navigation and page access.
+//
+// This is a UX/routing convenience layer, NOT the security boundary — the
+// backend independently enforces permissions at the API layer (role checks,
+// department checks, financial-field stripping) regardless of what the
+// frontend shows or allows navigation to.
+//
+// Role names match the backend's `ROLES` set exactly (server.py ~line 28).
+// "employee" is a legacy alias kept for old accounts, treated identically to
+// "cabinet_maker" here. "designer" (legacy alias for "drafter") has been
+// deliberately dropped from this table per Allan's decision — Designer is
+// not a distinct role going forward, it's just Drafter. The backend still
+// accepts "designer" as a legacy DB value for old rows, but no new account
+// should ever be created with it, and this frontend treats it as an
+// unmapped role (falls through to the SAFE_DEFAULT below) rather than
+// giving it special-cased access.
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { useAuth } from "@/lib/store/auth";
-import { api } from "@/lib/api/client";
+import type { IconName } from "@/lib/components/Icon";
 
-interface Variation {
-  id: string;
-  jobId: string;
-  jobNum?: string;
-  jobName?: string;
-  client?: string;
-  title: string;
-  description?: string;
-  status?: "pending" | "approved" | "rejected" | "in_progress" | "done";
-  requestedAt?: string;
-  resolvedAt?: string;
-  requestedBy?: string;
-}
+// Groups shown in the desktop sidebar and as section headers in the mobile
+// More drawer. Order in NAV_GROUP_ORDER controls display order.
+export type NavGroup = "Workshop" | "Production" | "Design" | "Office" | "Business";
 
-function variationStatusMeta(status?: string): { label: string; className: string } {
-  switch (status) {
-    case "approved":
-      return { label: "Approved", className: "bg-green-100 text-green-700" };
-    case "in_progress":
-      return { label: "In progress", className: "bg-blue-100 text-blue-700" };
-    case "done":
-      return { label: "Done", className: "bg-ink-100 text-ink-400" };
-    case "rejected":
-      return { label: "Rejected", className: "bg-red-100 text-red-700" };
-    default:
-      return { label: "Pending", className: "bg-amber-100 text-amber-700" };
-  }
-}
+export type Role =
+  | "managing_director"
+  | "manager"
+  | "department_manager"
+  | "admin"
+  | "supervisor"
+  | "office"
+  | "drafter"
+  | "cabinet_maker"
+  | "installer"
+  | "employee"
+  | "contractor";
 
-type FilterKey = "all" | "pending" | "approved" | "in_progress" | "done";
+export type PageKey =
+  | "dashboard"
+  | "jobs"
+  | "tasks"
+  | "queue"
+  | "inventory"
+  | "materials"
+  | "design"
+  | "briefs"
+  | "variations"
+  | "office"
+  | "sales"
+  | "analytics"
+  | "invoices"
+  | "accounts"
+  | "team";
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "in_progress", label: "In progress" },
-  { key: "done", label: "Done" },
+// `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
+// emoji. `group` drives section dividers in the desktop sidebar and the
+// grouped MORE drawer on mobile.
+export const PAGES: Record<
+  PageKey,
+  { href: string; label: string; icon: IconName; group: NavGroup }
+> = {
+  // ── Workshop (primary nav) ──────────────────────────────────────────
+  dashboard:  { href: "/dashboard",  label: "Dashboard",  icon: "dashboard", group: "Workshop"    },
+  jobs:       { href: "/jobs",       label: "Jobs",       icon: "jobs",      group: "Workshop"    },
+  tasks:      { href: "/tasks",      label: "Tasks",      icon: "tasks",     group: "Workshop"    },
+
+  // ── Production ─────────────────────────────────────────────────────
+  queue:      { href: "/queue",      label: "Queue",      icon: "wrench",    group: "Production"  },
+  materials:  { href: "/materials",  label: "Materials",  icon: "inventory", group: "Production"  },
+  inventory:  { href: "/inventory",  label: "Inventory",  icon: "inventory", group: "Production"  },
+
+  // ── Design ─────────────────────────────────────────────────────────
+  design:     { href: "/design",     label: "Design",     icon: "design",    group: "Design"      },
+  briefs:     { href: "/briefs",     label: "Briefs",     icon: "document",  group: "Design"      },
+  variations: { href: "/variations", label: "Variation",  icon: "alert",     group: "Design"      },
+
+  // ── Office ─────────────────────────────────────────────────────────
+  office:     { href: "/office",     label: "Purchasing", icon: "truck",     group: "Office"      },
+  sales:      { href: "/sales",      label: "Sales",      icon: "sales",     group: "Office"      },
+  invoices:   { href: "/invoices",   label: "Invoices",   icon: "invoices",  group: "Office"      },
+  accounts:   { href: "/accounts",   label: "Accounts",   icon: "accounts",  group: "Office"      },
+  analytics:  { href: "/analytics",  label: "Analytics",  icon: "analytics", group: "Office"      },
+
+  // ── Business ───────────────────────────────────────────────────────
+  team:       { href: "/team",       label: "Team",       icon: "team",      group: "Business"    },
+};
+
+export const NAV_GROUP_ORDER: NavGroup[] = [
+  "Workshop",
+  "Production",
+  "Design",
+  "Office",
+  "Business",
 ];
 
-export default function VariationsPage() {
-  const { user } = useAuth();
-  const [variations, setVariations] = useState<Variation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterKey>("all");
+// ── Executive / Management ──────────────────────────────────────────────────
+// Primary mobile: DASHBOARD | JOBS | TASKS | MORE  (3 primary, rest in More)
+// Desktop sidebar shows all, grouped by NavGroup.
+const EXEC_PAGES: PageKey[] = [
+  // Primary (first 3 → shown in bottom bar)
+  "dashboard", "jobs", "tasks",
+  // Design → MORE drawer, Design section
+  "design", "briefs", "variations",
+  // Production → MORE drawer, Production section
+  "queue", "materials", "inventory",
+  // Office → MORE drawer, Office section
+  "office", "sales", "invoices", "accounts", "analytics",
+  // Business → MORE drawer
+  "team",
+];
 
-  useEffect(() => {
-    let alive = true;
-    api
-      .get<Variation[]>("/variations/mine")
-      .then((data) => {
-        if (alive) {
-          setVariations(data || []);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [user?.id]);
+// Managing Director / Manager / Admin get the full list + Team.
+// department_manager does not get Team (user management is sensitive).
+const EXEC_NO_TEAM: PageKey[] = EXEC_PAGES.filter((p) => p !== "team");
 
-  const filtered =
-    filter === "all"
-      ? variations
-      : variations.filter((v) => v.status === filter);
+// Pages each role can reach, in nav display order.
+// • First entry = landing page after login.
+// • Roles not listed fall back to SAFE_DEFAULT rather than accidentally
+//   granting broad access.
+const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
+  managing_director: EXEC_PAGES,
+  manager:           EXEC_PAGES,
+  department_manager: EXEC_NO_TEAM,
+  admin:             EXEC_PAGES,
 
-  const pendingCount = variations.filter(
-    (v) => !v.status || v.status === "pending"
-  ).length;
+  // Production oversight — floor + queue visibility, no financial pages.
+  supervisor: ["dashboard", "jobs", "tasks", "queue", "inventory", "materials"],
 
-  return (
-    <div className="page pb-28">
-      {/* Header */}
-      <div className="mb-6 rounded-card bg-ink-950 px-5 py-5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-orange">
-          Design &amp; Drafting
-        </p>
-        <div className="mt-2.5 flex items-end justify-between gap-3">
-          <div>
-            <h1 className="font-heading text-xl font-semibold tracking-tight text-white">
-              Variations
-            </h1>
-            <p className="mt-0.5 text-xs text-white/50">
-              {pendingCount} pending action
-            </p>
-          </div>
-          {!loading && (
-            <span className="font-heading text-3xl font-bold tabular tracking-tight text-brand-orange">
-              {variations.length}
-            </span>
-          )}
-        </div>
-      </div>
+  // Materials/purchasing-facing role. Office is their landing page.
+  office: ["office", "inventory", "invoices", "accounts", "dashboard"],
 
-      {/* Filter tabs */}
-      <div className="mb-4 flex gap-1 overflow-x-auto">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilter(f.key)}
-            className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-              filter === f.key
-                ? "bg-ink-900 text-white"
-                : "bg-ink-100 text-ink-600 hover:bg-ink-200"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+  // Drafter: DASHBOARD | JOBS | TASKS | BRIEFS | VARIATION (5 primary tabs)
+  drafter: ["dashboard", "jobs", "tasks", "briefs", "variations"],
 
-      {/* Variation list */}
-      {loading ? (
-        <div className="flex flex-col gap-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-24 animate-pulse rounded-card bg-ink-100" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-card border border-ink-200 p-8 text-center text-sm text-ink-400">
-          {filter === "all"
-            ? "No variations assigned yet."
-            : `No ${filter.replace("_", " ")} variations.`}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {filtered.map((v) => {
-            const statusMeta = variationStatusMeta(v.status);
-            const isDone = v.status === "done" || v.status === "rejected";
-            const jobLabel = v.jobNum ? `#${v.jobNum}` : `#${v.jobId.slice(0, 6)}`;
-            const jobTitle = v.jobName || v.client || "Unnamed job";
+  // Floor workers — daily production log and build queue.
+  cabinet_maker: ["dashboard", "tasks", "queue", "materials"],
+  installer:     ["dashboard", "tasks"],
+  employee:      ["dashboard", "tasks", "queue", "materials"],
+  contractor:    ["dashboard", "tasks"],
+};
 
-            return (
-              <Link
-                key={v.id}
-                href={`/jobs/${v.jobId}`}
-                className={`card-interactive card-pad block ${isDone ? "opacity-60" : ""}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-semibold text-ink-400">
-                        {jobLabel}
-                      </span>
-                      <span className="text-[11px] text-ink-300">·</span>
-                      <span className="truncate text-[11px] text-ink-500">
-                        {jobTitle}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm font-semibold leading-snug text-ink-900">
-                      {v.title}
-                    </p>
-                    {v.description && (
-                      <p className="mt-0.5 truncate text-xs text-ink-500">
-                        {v.description}
-                      </p>
-                    )}
-                  </div>
-                  {v.requestedAt && (
-                    <span className="shrink-0 text-[11px] text-ink-400">
-                      {new Date(v.requestedAt).toLocaleDateString("en-AU", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2.5 flex items-center gap-2">
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}
-                  >
-                    {statusMeta.label}
-                  </span>
-                  {v.requestedBy && (
-                    <span className="text-[11px] text-ink-400">
-                      by {v.requestedBy}
-                    </span>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
+const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];
+
+export function pagesForRole(role: string | undefined | null): PageKey[] {
+  if (!role) return [];
+  return ROLE_PAGES[role as Role] || SAFE_DEFAULT;
+}
+
+export function navItemsForRole(role: string | undefined | null) {
+  return pagesForRole(role).map((key) => ({ key, ...PAGES[key] }));
+}
+
+export function landingPageForRole(role: string | undefined | null): string {
+  const pages = pagesForRole(role);
+  return pages.length ? PAGES[pages[0]].href : "/dashboard";
+}
+
+// How many tabs to pin to the mobile bottom bar before the overflow → MORE.
+// Drafter has 5 distinct tabs with no overflow.
+// Exec roles get 3 primary (dashboard/jobs/tasks) and everything else in More.
+// All other roles default to 4.
+export function mobilePrimaryCount(role: string | undefined | null): number {
+  if (!role) return 4;
+  if (role === "drafter") return 5;
+  if (
+    role === "managing_director" ||
+    role === "manager" ||
+    role === "department_manager" ||
+    role === "admin"
+  )
+    return 3;
+  return 4;
+}
+
+// Given the current pathname (e.g. "/jobs"), is this role allowed here?
+// Unmapped paths (e.g. a future page not yet added to PAGES) are allowed
+// through by default — this table only restricts the known feature pages.
+export function isPathAllowedForRole(
+  pathname: string,
+  role: string | undefined | null
+): boolean {
+  const pageKey = (Object.keys(PAGES) as PageKey[]).find(
+    (key) => PAGES[key].href === pathname
   );
+  if (!pageKey) return true;
+  return pagesForRole(role).includes(pageKey);
 }
