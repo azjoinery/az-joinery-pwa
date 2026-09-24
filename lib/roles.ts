@@ -1,143 +1,197 @@
-// Single source of truth for role-based navigation and page access.
-//
-// This is a UX/routing convenience layer, NOT the security boundary — the
-// backend independently enforces permissions at the API layer (role checks,
-// department checks, financial-field stripping) regardless of what the
-// frontend shows or allows navigation to. See CLAUDE.md and
-// AZ-Joinery-App-Audit-and-Plan.md for the full picture.
-//
-// Role names match the backend's `ROLES` set exactly (server.py ~line 28).
-// "employee" is a legacy alias kept for old accounts, treated identically to
-// "cabinet_maker" here. "designer" (legacy alias for "drafter") has been
-// deliberately dropped from this table per Allan's decision — Designer is
-// not a distinct role going forward, it's just Drafter. The backend still
-// accepts "designer" as a legacy DB value for old rows, but no new account
-// should ever be created with it, and this frontend treats it as an
-// unmapped role (falls through to the SAFE_DEFAULT below) rather than
-// giving it special-cased access.
- 
-import type { IconName } from "@/lib/components/Icon";
- 
-export type NavGroup = "Workshop" | "Commercial" | "Business";
- 
-export type Role =
-  | "managing_director"
-  | "manager"
-  | "department_manager"
-  | "admin"
-  | "supervisor"
-  | "office"
-  | "drafter"
-  | "cabinet_maker"
-  | "installer"
-  | "employee"
-  | "contractor";
- 
-export type PageKey =
-  | "dashboard"
-  | "jobs"
-  | "tasks"
-  | "materials"
-  | "inventory"
-  | "log"
-  | "sales"
-  | "analytics"
-  | "invoices"
-  | "design"
-  | "team"
-  | "accounts"
-  | "trash";
- 
-// `icon` is a key into the app icon set (lib/components/Icon.tsx) — not an
-// emoji. Emojis render differently on every OS and read as unprofessional in
-// a business tool, so the nav uses a single consistent stroked SVG set.
-// `group` drives the section dividers in the desktop sidebar.
-export const PAGES: Record<
-  PageKey,
-  { href: string; label: string; icon: IconName; group: NavGroup }
-> = {
-  dashboard: { href: "/dashboard", label: "Dashboard", icon: "dashboard", group: "Workshop" },
-  jobs:      { href: "/jobs",      label: "Jobs",      icon: "jobs",      group: "Workshop" },
-  tasks:     { href: "/tasks",     label: "Tasks",     icon: "tasks",     group: "Workshop" },
-  design:    { href: "/design",    label: "Design",    icon: "design",    group: "Workshop" },
-  materials: { href: "/materials", label: "Materials", icon: "inventory", group: "Workshop" },
-  inventory: { href: "/inventory", label: "Inventory", icon: "inventory", group: "Workshop" },
-  log:       { href: "/log",       label: "Log",       icon: "analytics", group: "Workshop" },
- 
-  sales:     { href: "/sales",     label: "Sales",     icon: "sales",     group: "Commercial" },
-  invoices:  { href: "/invoices",  label: "Invoices",  icon: "invoices",  group: "Commercial" },
-  accounts:  { href: "/accounts",  label: "Accounts",  icon: "accounts",  group: "Commercial" },
-  analytics: { href: "/analytics", label: "Analytics", icon: "analytics", group: "Commercial" },
- 
-  team:      { href: "/team",      label: "Team",      icon: "team",      group: "Business" },
-  trash:     { href: "/trash",     label: "Trash",     icon: "inventory", group: "Business" },
-};
- 
-export const NAV_GROUP_ORDER: NavGroup[] = ["Workshop", "Commercial", "Business"];
- 
-const ALL_PAGES: PageKey[] = ["dashboard", "jobs", "tasks", "materials", "inventory", "log", "sales", "analytics", "invoices", "design", "accounts"];
- 
-// Slice 8b — Trash lives in the Business group. It's added below to admin /
-// MD / manager (who can also permanent-delete) and supervisor (who can
-// restore, but the Trash page itself hides the Delete-forever button for
-// them — backend enforces the same rule).
- 
-// Managing Director, General Manager, and Admin get everything Department
-// Manager gets (ALL_PAGES) plus the Team/Roles page. Team is deliberately
-// withheld from department_manager — the backend already treats that role
-// as legacy/non-assignable (roles/catalog marks it "assignable": false),
-// and user management is sensitive enough to keep to the top 3 roles only.
-const ALL_PAGES_PLUS_TEAM: PageKey[] = [...ALL_PAGES, "team"];
- 
-// Pages each role can reach, in nav display order. First entry = landing
-// page after login. Roles not listed here fall back to a minimal safe
-// default (dashboard + tasks) rather than accidentally granting broad access.
-const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
-  managing_director: [...ALL_PAGES_PLUS_TEAM, "trash"],
-  manager: [...ALL_PAGES_PLUS_TEAM, "trash"],
-  department_manager: ALL_PAGES,
-  admin: [...ALL_PAGES_PLUS_TEAM, "trash"],
- 
-  // Floor/production oversight — no financial pages (Sales/Invoices), no Design.
-  // Log added so supervisor can review workshop activity history.
-  supervisor: ["dashboard", "jobs", "tasks",  "materials", "inventory", "log", "trash"],
- 
-  // Materials/purchasing-facing role. Log added so office can review
-  // stock movements (receipts, consumption) as history.
-  office: ["dashboard", "jobs", "materials", "inventory", "invoices", "accounts", "log"],
- 
-  // Design module — Design page (briefs, stages, release) is the landing page;
-  // Jobs (Kanban) gives visibility into the production pipeline.
-  drafter: ["design", "jobs"],
- 
-  // Floor workers — daily production log + their own tasks + Log history.
-  cabinet_maker: ["dashboard", "jobs", "tasks", "materials", "log"],
-  installer: ["dashboard", "jobs", "tasks", "materials", "log"],
-  employee: ["dashboard", "jobs", "tasks", "materials", "log"],
-  contractor: ["dashboard", "jobs", "tasks", "materials", "log"],
-};
- 
-const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];
- 
-export function pagesForRole(role: string | undefined | null): PageKey[] {
-  if (!role) return [];
-  return ROLE_PAGES[role as Role] || SAFE_DEFAULT;
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useAuth } from "@/lib/store/auth";
+import { api } from "@/lib/api/client";
+
+interface Variation {
+  id: string;
+  jobId: string;
+  jobNum?: string;
+  jobName?: string;
+  client?: string;
+  title: string;
+  description?: string;
+  status?: "pending" | "approved" | "rejected" | "in_progress" | "done";
+  requestedAt?: string;
+  resolvedAt?: string;
+  requestedBy?: string;
 }
- 
-export function navItemsForRole(role: string | undefined | null) {
-  return pagesForRole(role).map((key) => ({ key, ...PAGES[key] }));
+
+function variationStatusMeta(status?: string): { label: string; className: string } {
+  switch (status) {
+    case "approved":
+      return { label: "Approved", className: "bg-green-100 text-green-700" };
+    case "in_progress":
+      return { label: "In progress", className: "bg-blue-100 text-blue-700" };
+    case "done":
+      return { label: "Done", className: "bg-ink-100 text-ink-400" };
+    case "rejected":
+      return { label: "Rejected", className: "bg-red-100 text-red-700" };
+    default:
+      return { label: "Pending", className: "bg-amber-100 text-amber-700" };
+  }
 }
- 
-export function landingPageForRole(role: string | undefined | null): string {
-  const pages = pagesForRole(role);
-  return pages.length ? PAGES[pages[0]].href : "/dashboard";
-}
- 
-// Given the current pathname (e.g. "/jobs"), is this role allowed here?
-// Unmapped paths (e.g. a future page not yet added to PAGES) are allowed
-// through by default — this table only restricts the known feature pages.
-export function isPathAllowedForRole(pathname: string, role: string | undefined | null): boolean {
-  const pageKey = (Object.keys(PAGES) as PageKey[]).find((key) => PAGES[key].href === pathname);
-  if (!pageKey) return true;
-  return pagesForRole(role).includes(pageKey);
+
+type FilterKey = "all" | "pending" | "approved" | "in_progress" | "done";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending" },
+  { key: "approved", label: "Approved" },
+  { key: "in_progress", label: "In progress" },
+  { key: "done", label: "Done" },
+];
+
+export default function VariationsPage() {
+  const { user } = useAuth();
+  const [variations, setVariations] = useState<Variation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<FilterKey>("all");
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<Variation[]>("/variations/mine")
+      .then((data) => {
+        if (alive) {
+          setVariations(data || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  const filtered =
+    filter === "all"
+      ? variations
+      : variations.filter((v) => v.status === filter);
+
+  const pendingCount = variations.filter(
+    (v) => !v.status || v.status === "pending"
+  ).length;
+
+  return (
+    <div className="page pb-28">
+      {/* Header */}
+      <div className="mb-6 rounded-card bg-ink-950 px-5 py-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-orange">
+          Design &amp; Drafting
+        </p>
+        <div className="mt-2.5 flex items-end justify-between gap-3">
+          <div>
+            <h1 className="font-heading text-xl font-semibold tracking-tight text-white">
+              Variations
+            </h1>
+            <p className="mt-0.5 text-xs text-white/50">
+              {pendingCount} pending action
+            </p>
+          </div>
+          {!loading && (
+            <span className="font-heading text-3xl font-bold tabular tracking-tight text-brand-orange">
+              {variations.length}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="mb-4 flex gap-1 overflow-x-auto">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              filter === f.key
+                ? "bg-ink-900 text-white"
+                : "bg-ink-100 text-ink-600 hover:bg-ink-200"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Variation list */}
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 animate-pulse rounded-card bg-ink-100" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-card border border-ink-200 p-8 text-center text-sm text-ink-400">
+          {filter === "all"
+            ? "No variations assigned yet."
+            : `No ${filter.replace("_", " ")} variations.`}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtered.map((v) => {
+            const statusMeta = variationStatusMeta(v.status);
+            const isDone = v.status === "done" || v.status === "rejected";
+            const jobLabel = v.jobNum ? `#${v.jobNum}` : `#${v.jobId.slice(0, 6)}`;
+            const jobTitle = v.jobName || v.client || "Unnamed job";
+
+            return (
+              <Link
+                key={v.id}
+                href={`/jobs/${v.jobId}`}
+                className={`card-interactive card-pad block ${isDone ? "opacity-60" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-ink-400">
+                        {jobLabel}
+                      </span>
+                      <span className="text-[11px] text-ink-300">·</span>
+                      <span className="truncate text-[11px] text-ink-500">
+                        {jobTitle}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold leading-snug text-ink-900">
+                      {v.title}
+                    </p>
+                    {v.description && (
+                      <p className="mt-0.5 truncate text-xs text-ink-500">
+                        {v.description}
+                      </p>
+                    )}
+                  </div>
+                  {v.requestedAt && (
+                    <span className="shrink-0 text-[11px] text-ink-400">
+                      {new Date(v.requestedAt).toLocaleDateString("en-AU", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}
+                  >
+                    {statusMeta.label}
+                  </span>
+                  {v.requestedBy && (
+                    <span className="text-[11px] text-ink-400">
+                      by {v.requestedBy}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
