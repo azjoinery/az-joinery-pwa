@@ -453,7 +453,10 @@ function FloorLogDashboard() {
   const isSupervisor = user?.role === "supervisor";
 
   /* ── state ── */
-  const [counts, setCounts] = useState<Record<string, number>>({});
+  // asmCounts: per-job assembly counts  { [jobId]: { cab_small: 0, ... } }
+  const [asmCounts, setAsmCounts] = useState<Record<string, Record<string, number>>>({});
+  // asmDone: per-job "assembly marked done"  { [jobId]: true }
+  const [asmDone, setAsmDone] = useState<Record<string, boolean>>({});
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -471,7 +474,6 @@ function FloorLogDashboard() {
   // Assembly accordion
   const [asmOpen, setAsmOpen] = useState(false);
   const [assemblyJobId, setAssemblyJobId] = useState<string>("");
-  const [assemblyDone, setAssemblyDone] = useState(false);
 
   // Supervisor add modal (stock picker + mandatory note)
   const [pickerOpen, setPickerOpen] = useState<null | { dept: "cnc" | "hardware" }>(null);
@@ -515,11 +517,11 @@ function FloorLogDashboard() {
       const today = new Date().toISOString().split("T")[0];
       const data = await api.get<DailyEntry>(`/entries/mine?date=${today}`);
       if (data) {
-        setCounts(data.counts || {});
+        setAsmCounts((data as any).asmCounts || {});
+        setAsmDone((data as any).asmDone || {});
         setNote(data.note || "");
         setMaterials(data.materials || []);
         setAssemblyJobId((data as any).assemblyJobId || "");
-        setAssemblyDone(!!(data as any).assemblyDone);
       }
     } catch { console.log("No entry yet for today"); }
   };
@@ -586,7 +588,7 @@ function FloorLogDashboard() {
           });
         await api.post("/entries", {
           date: new Date().toISOString().split("T")[0],
-          counts, note, materials: rows, assemblyJobId, assemblyDone,
+          note, materials: rows,
         });
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus((s) => (s === "saved" ? "" : s)), 1600);
@@ -594,11 +596,28 @@ function FloorLogDashboard() {
     }, 500);
   };
 
-  /* ── assembly counters ── */
-  const increment = (key: string) => setCounts((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
-  const decrement = (key: string) => setCounts((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
-  const setCounterValue = (key: string, value: number) =>
-    setCounts((prev) => ({ ...prev, [key]: Math.max(0, Math.round(value || 0)) }));
+  /* ── assembly counters (per-job) ── */
+  const increment = (key: string) => {
+    if (!assemblyJobId) return;
+    setAsmCounts((prev) => ({
+      ...prev,
+      [assemblyJobId]: { ...(prev[assemblyJobId] || {}), [key]: ((prev[assemblyJobId]?.[key]) || 0) + 1 },
+    }));
+  };
+  const decrement = (key: string) => {
+    if (!assemblyJobId) return;
+    setAsmCounts((prev) => ({
+      ...prev,
+      [assemblyJobId]: { ...(prev[assemblyJobId] || {}), [key]: Math.max(0, ((prev[assemblyJobId]?.[key]) || 0) - 1) },
+    }));
+  };
+  const setCounterValue = (key: string, value: number) => {
+    if (!assemblyJobId) return;
+    setAsmCounts((prev) => ({
+      ...prev,
+      [assemblyJobId]: { ...(prev[assemblyJobId] || {}), [key]: Math.max(0, Math.round(value || 0)) },
+    }));
+  };
 
   /* ── submit ── */
   const submitLog = async () => {
@@ -613,8 +632,22 @@ function FloorLogDashboard() {
           return { ...m, jobNum: job?.jobNum || (m as any).jobNum || "" };
         });
       await api.post("/entries", {
-        date: today, counts, note, materials: cleanMaterials, assemblyJobId, assemblyDone,
+        date: today, note, materials: cleanMaterials, assemblyJobId,
+        asmCounts, asmDone,
       });
+
+      // Move done-assembly jobs to "ready_to_deliver" on the Kanban
+      const doneJobIds = Object.keys(asmDone).filter((id) => asmDone[id]);
+      await Promise.allSettled(
+        doneJobIds.map((jobId) =>
+          (api as any).patch(`/jobs/${jobId}`, {
+            status: "ready_to_deliver",
+            assembly_counts: asmCounts[jobId] || {},
+            assembly_done: true,
+          })
+        )
+      );
+
       setOk(true);
       setMessage(cleanMaterials.length > 0 ? "Daily log saved — stock updated." : "Daily log saved.");
       setTimeout(() => setMessage(""), 3000);
@@ -625,7 +658,10 @@ function FloorLogDashboard() {
   };
 
   /* ── derived ── */
-  const assemblyTotal = Object.values(counts).reduce((a, b) => a + b, 0);
+  const curJobCounts = asmCounts[assemblyJobId] || {};
+  const assemblyTotal = Object.values(asmCounts).reduce(
+    (total, jc) => total + Object.values(jc).reduce((a, b) => a + b, 0), 0
+  );
   const firstName = user?.name?.split(" ")[0] ?? "";
 
   const cncRows = materials
@@ -644,9 +680,10 @@ function FloorLogDashboard() {
       : null
     : null;
 
-  const asmSummary =
-    cabinetTypes.filter((t) => (counts[t.key] || 0) > 0).map((t) => `${counts[t.key]} ${t.label}`).join(" · ")
-    || "Tap to enter cabinet counts";
+  const asmSummary = assemblyJobId
+    ? cabinetTypes.filter((t) => (curJobCounts[t.key] || 0) > 0)
+        .map((t) => `${curJobCounts[t.key]} ${t.label}`).join(" · ") || "Tap to enter counts"
+    : "Select a job to begin";
 
   return (
     <>
@@ -820,7 +857,7 @@ function FloorLogDashboard() {
                   <h2 className="section-title">Assembly</h2>
                   <p className="mt-0.5 truncate text-xs text-ink-400">{asmSummary}</p>
                 </div>
-                {assemblyDone ? (
+                {asmDone[assemblyJobId] ? (
                   <span className="shrink-0 rounded-md border border-green-300 bg-green-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-700">
                     Done
                   </span>
@@ -862,6 +899,11 @@ function FloorLogDashboard() {
                 </div>
 
                 {/* 6 cabinet type rows — same style as MaterialRow */}
+                {!assemblyJobId ? (
+                  <div className="mb-4 rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
+                    Select a job above to enter counts.
+                  </div>
+                ) : (
                 <div className="mb-4 space-y-2">
                   {cabinetTypes.map((type) => (
                     <div
@@ -876,7 +918,7 @@ function FloorLogDashboard() {
                         <button
                           type="button"
                           onClick={() => decrement(type.key)}
-                          disabled={(counts[type.key] || 0) <= 0}
+                          disabled={(curJobCounts[type.key] || 0) <= 0}
                           aria-label={`Decrease ${type.label}`}
                           className="grid h-12 w-12 place-items-center rounded-lg bg-white text-2xl font-bold text-ink-700 shadow-sm disabled:opacity-30 active:scale-95"
                         >
@@ -886,7 +928,7 @@ function FloorLogDashboard() {
                           type="number"
                           min="0"
                           step="1"
-                          value={counts[type.key] || 0}
+                          value={curJobCounts[type.key] || 0}
                           onChange={(e) => setCounterValue(type.key, Number(e.target.value))}
                           className="h-12 w-14 rounded-lg border border-ink-200 bg-white text-center font-heading text-lg font-bold tabular-nums text-ink-900 outline-none focus:border-brand-orange"
                         />
@@ -902,27 +944,32 @@ function FloorLogDashboard() {
                     </div>
                   ))}
                 </div>
+                )}
 
                 {/* Done tick */}
                 <button
                   type="button"
-                  onClick={() => setAssemblyDone((v) => !v)}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors active:scale-[0.98] ${
-                    assemblyDone ? "border-green-300 bg-green-50" : "border-ink-200 bg-white"
+                  disabled={!assemblyJobId}
+                  onClick={() => {
+                    if (!assemblyJobId) return;
+                    setAsmDone((prev) => ({ ...prev, [assemblyJobId]: !prev[assemblyJobId] }));
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors active:scale-[0.98] disabled:opacity-40 ${
+                    asmDone[assemblyJobId] ? "border-green-300 bg-green-50" : "border-ink-200 bg-white"
                   }`}
                 >
                   <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 transition-colors ${
-                    assemblyDone ? "border-green-500 bg-green-500" : "border-ink-300 bg-white"
+                    asmDone[assemblyJobId] ? "border-green-500 bg-green-500" : "border-ink-300 bg-white"
                   }`}>
-                    {assemblyDone && (
+                    {asmDone[assemblyJobId] && (
                       <svg width="12" height="12" viewBox="0 0 24 24" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none">
                         <path d="M20 6L9 17l-5-5" />
                       </svg>
                     )}
                   </span>
                   <div>
-                    <p className={`text-sm font-semibold ${assemblyDone ? "text-green-700" : "text-ink-700"}`}>
-                      {assemblyDone ? "Assembly marked as done ✓" : "Mark assembly as done"}
+                    <p className={`text-sm font-semibold ${asmDone[assemblyJobId] ? "text-green-700" : "text-ink-700"}`}>
+                      {asmDone[assemblyJobId] ? "Assembly marked as done ✓" : "Mark assembly as done"}
                     </p>
                     <p className="text-xs text-ink-400">
                       Confirms all cabinets built — used for installer payment &amp; invoicing
