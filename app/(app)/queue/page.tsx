@@ -13,9 +13,16 @@
  * For executive roles (MD / Manager / Admin / Department Manager):
  * a 3-tab view (Queue / Inventory / Materials) replacing the separate
  * Inventory and Materials nav items.
+ *
+ * Auto-advancement: whenever progress thresholds are met (cnc_done ≥
+ * cnc_target, assembly_done, hw_done ≥ hw_target) the queue automatically
+ * PATCHes the job's production stage — no manual step needed. This fires:
+ *   1. After every load / silent 30-second refresh
+ *   2. After "Mark assembled" is tapped
+ *   3. After CNC / Hardware target steppers are changed
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 import type { DailyEntry } from "@/lib/types";
@@ -97,6 +104,50 @@ const EMPTY_P: Progress = {
   cnc_target: 0, cnc_done: 0, hw_target: 0, hw_done: 0, assembly_done: false,
 };
 
+// ── Stage advancement helpers ─────────────────────────────────────────────────
+
+/**
+ * Ordered production sub-stages. Higher rank = further along.
+ * Advancement is always forward-only (never demotes a stage).
+ */
+const PROD_STAGE_RANK: Record<string, number> = {
+  "Not Started": 0,
+  "CNC Cut": 1,
+  "Assembling": 2,
+  "Hardware Fitted": 3,
+  "Ready to Deliver": 4,
+  "Delivered": 5,
+};
+function prodStageRank(stage?: string) {
+  return PROD_STAGE_RANK[stage || ""] ?? -1;
+}
+
+/**
+ * Returns the stage the job SHOULD be in based on current progress,
+ * or null if no advancement is warranted.
+ *
+ * Rules (forward-only — won't regress a stage):
+ *   Any CNC usage recorded  → advance to "CNC Cut"
+ *   assembly_done = true    → advance to "Hardware Fitted"
+ *   hw_done ≥ hw_target > 0 AND assembly done → advance to "Ready to Deliver"
+ */
+function targetProdStage(p: Progress): string | null {
+  const candidates: string[] = [];
+  if (p.cnc_done > 0) candidates.push("CNC Cut");
+  if (p.assembly_done) candidates.push("Hardware Fitted");
+  if (p.assembly_done && p.hw_target > 0 && p.hw_done >= p.hw_target)
+    candidates.push("Ready to Deliver");
+
+  // Pick the highest-rank candidate that is strictly ahead of the current stage
+  let best: string | null = null;
+  let bestRank = prodStageRank(p.stage);
+  for (const c of candidates) {
+    const r = prodStageRank(c);
+    if (r > bestRank) { best = c; bestRank = r; }
+  }
+  return best;
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ProductionPage() {
   const { user } = useAuth();
@@ -109,10 +160,41 @@ export default function ProductionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Visual feedback when a stage was auto-advanced: jobId → new stage name
+  const [advanced, setAdvanced] = useState<Record<string, string>>({});
+
   // Executive-only data
   const [entries, setEntries] = useState<DailyEntry[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [jobs, setJobs] = useState<JobPick[]>([]);
+
+  // Keep a ref so autoAdvanceJob can call setProgress without stale closure issues
+  const progressRef = useRef<Record<string, Progress>>({});
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+
+  /**
+   * Attempt to advance a job's production stage if its progress now meets a
+   * threshold. Fires the PATCH, updates local state, and briefly shows a
+   * "stage advanced" badge on the card. Silent on failure.
+   */
+  const autoAdvanceJob = useCallback(async (jobId: string, p: Progress) => {
+    const newStage = targetProdStage(p);
+    if (!newStage) return;
+    try {
+      await api.patch(`/jobs/${jobId}/production-stage`, { stage: newStage });
+      setProgress((cur) => ({
+        ...cur,
+        [jobId]: { ...p, stage: newStage },
+      }));
+      setAdvanced((prev) => ({ ...prev, [jobId]: newStage }));
+      setTimeout(
+        () => setAdvanced((prev) => { const n = { ...prev }; delete n[jobId]; return n; }),
+        4000
+      );
+    } catch {
+      // Silently ignore — the stage will be advanced on next load
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,17 +220,49 @@ export default function ProductionPage() {
         setStock(stockRows || []);
         setJobs(jobRows || []);
       }
+
+      // Auto-advance stages for any job that now meets a threshold.
+      // This is the "queue detects completion" step — no manual action needed.
+      const progMap = prog || {};
+      await Promise.allSettled(
+        Object.entries(progMap).map(([jobId, p]) => autoAdvanceJob(jobId, p))
+      );
     } catch {
       setError("Could not load production data. Tap Refresh to try again.");
     } finally {
       setLoading(false);
     }
-  }, [isExecutive]);
+  }, [isExecutive, autoAdvanceJob]);
 
   useEffect(() => { load(); }, [load]);
 
-  const applyProgress = (jobId: string, p: Progress) =>
-    setProgress((cur) => ({ ...cur, [jobId]: p }));
+  // Silent 30-second poll — picks up counter taps from the dashboard
+  // without requiring a manual refresh. No spinner so it doesn't flash.
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const prog = await api.get<Record<string, Progress>>("/jobs/progress");
+        if (!prog) return;
+        setProgress(prog);
+        await Promise.allSettled(
+          Object.entries(prog).map(([jobId, p]) => autoAdvanceJob(jobId, p))
+        );
+      } catch { /* network blip — skip this tick */ }
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [autoAdvanceJob]);
+
+  /**
+   * Called by JobRow whenever a progress update arrives (toggle assembly,
+   * change targets). Applies the update locally AND runs auto-advancement.
+   */
+  const handleProgress = useCallback(
+    (jobId: string, p: Progress) => {
+      setProgress((cur) => ({ ...cur, [jobId]: p }));
+      autoAdvanceJob(jobId, p);
+    },
+    [autoAdvanceJob]
+  );
 
   const { ready, building } = useMemo(() => {
     const rows: Row[] = queue.map((j) => ({ ...j, p: progress[j.id] || EMPTY_P }));
@@ -208,7 +322,8 @@ export default function ProductionPage() {
           building={building}
           loading={loading}
           canEdit={canEdit}
-          applyProgress={applyProgress}
+          advanced={advanced}
+          onProgress={handleProgress}
         />
       )}
 
@@ -226,12 +341,13 @@ export default function ProductionPage() {
 }
 
 // ── Production queue ──────────────────────────────────────────────────────────
-function ProductionQueueView({ ready, building, loading, canEdit, applyProgress }: {
+function ProductionQueueView({ ready, building, loading, canEdit, advanced, onProgress }: {
   ready: Row[];
   building: Row[];
   loading: boolean;
   canEdit: boolean;
-  applyProgress: (id: string, p: Progress) => void;
+  advanced: Record<string, string>;
+  onProgress: (jobId: string, p: Progress) => void;
 }) {
   const total = ready.length + building.length;
   return (
@@ -249,14 +365,26 @@ function ProductionQueueView({ ready, building, loading, canEdit, applyProgress 
           {ready.length > 0 && (
             <Section title={STAGE.ready.label} color={STAGE.ready.color} count={ready.length} hint="Materials on hand — good to start.">
               {ready.map((row) => (
-                <JobRow key={row.id} row={row} canEdit={canEdit} onProgress={(p) => applyProgress(row.id, p)} />
+                <JobRow
+                  key={row.id}
+                  row={row}
+                  canEdit={canEdit}
+                  advancedTo={advanced[row.id]}
+                  onProgress={(p) => onProgress(row.id, p)}
+                />
               ))}
             </Section>
           )}
           {building.length > 0 && (
             <Section title={STAGE.building.label} color={STAGE.building.color} count={building.length} hint="Work under way.">
               {building.map((row) => (
-                <JobRow key={row.id} row={row} canEdit={canEdit} onProgress={(p) => applyProgress(row.id, p)} />
+                <JobRow
+                  key={row.id}
+                  row={row}
+                  canEdit={canEdit}
+                  advancedTo={advanced[row.id]}
+                  onProgress={(p) => onProgress(row.id, p)}
+                />
               ))}
             </Section>
           )}
@@ -449,9 +577,10 @@ function Metric({ label, value, color }: { label: string; value: number | null; 
   );
 }
 
-function JobRow({ row, canEdit, onProgress }: {
+function JobRow({ row, canEdit, advancedTo, onProgress }: {
   row: Row;
   canEdit: boolean;
+  advancedTo?: string;
   onProgress: (p: Progress) => void;
 }) {
   const { p } = row;
@@ -558,7 +687,12 @@ function JobRow({ row, canEdit, onProgress }: {
         </button>
       </div>
 
-      {p.progress < 100 ? (
+      {/* Status / auto-advance feedback */}
+      {advancedTo ? (
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-semibold text-blue-700">
+          ✦ Stage auto-advanced → {advancedTo}
+        </div>
+      ) : p.progress < 100 ? (
         <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-center text-xs text-ink-400">
           Assigned-materials reconciliation unlocks when the job reaches 100%.
         </p>
