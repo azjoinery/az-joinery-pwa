@@ -2,36 +2,37 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 
 const JOB_TYPES = ["Kitchen", "Wardrobe", "Bathroom", "Laundry", "BBQ Kitchen", "Vanity", "TV Unit", "Other"];
-const PRIORITIES = ["Standard", "High", "Urgent"];
+const PRIORITIES = ["Normal", "High", "Low"];
 
 interface NewJobForm {
   title: string;
-  client_name: string;
-  client_phone: string;
-  client_email: string;
-  address: string;
-  job_type: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  siteAddress: string;
+  jobType: string;
   priority: string;
-  estimated_value: string;
+  estimatedValue: string;
   notes: string;
-  install_date: string;
+  installationDate: string;
 }
 
 const EMPTY: NewJobForm = {
   title: "",
-  client_name: "",
-  client_phone: "",
-  client_email: "",
-  address: "",
-  job_type: "Kitchen",
-  priority: "Standard",
-  estimated_value: "",
+  clientName: "",
+  clientPhone: "",
+  clientEmail: "",
+  siteAddress: "",
+  jobType: "Kitchen",
+  priority: "Normal",
+  estimatedValue: "",
   notes: "",
-  install_date: "",
+  installationDate: "",
 };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -76,6 +77,23 @@ const sectionTitleStyle: React.CSSProperties = {
   marginBottom: 2,
 };
 
+function moneyToNumber(value: string): number | null {
+  const cleaned = value.replace(/[$,\s]/g, "");
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function apiErrorMessage(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) return detail.map((item) => item?.msg || item?.message).filter(Boolean).join(", ");
+    if (error.response?.status) return `Save failed (${error.response.status}). Please check required fields.`;
+  }
+  return "Failed to save. Please try again.";
+}
+
 export default function NewJobPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -92,32 +110,54 @@ export default function NewJobPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
-    if (!form.title.trim()) { setError("Job title is required"); return; }
-    if (!form.client_name.trim()) { setError("Client name is required"); return; }
 
-    const createdBy = user.id;
+    const title = form.title.trim();
+    const client = form.clientName.trim();
+    if (!title) {
+      setError("Job title is required");
+      return;
+    }
+    if (!client) {
+      setError("Client name is required");
+      return;
+    }
+
     setSaving(true);
     setError(null);
+
     try {
       const payload = {
-        ...form,
-        estimated_value: form.estimated_value
-          ? parseFloat(form.estimated_value.replace(/[$,]/g, ""))
-          : null,
-        status: "Quote",
-        created_by: createdBy,
+        client,
+        phone: form.clientPhone.trim(),
+        clientEmail: form.clientEmail.trim(),
+        projectName: title,
+        title,
+        jobType: form.jobType,
+        priority: form.priority,
+        estimatedValue: moneyToNumber(form.estimatedValue),
+        siteAddress: form.siteAddress.trim(),
+        installationDate: form.installationDate,
+        status: "Received",
+        currentStatus: "Not Started",
+        currentDept: "Design",
+        designStage: "Job Assigned",
+        designProgress: 5,
+        releaseStatus: "In Design",
+        notes: form.notes.trim(),
+        createdBy: user.id,
+        createdByName: user.name,
       };
+
       const result = await api.post<{ id: string }>("/jobs", payload);
       router.push(result?.id ? `/jobs?new=${result.id}` : "/jobs");
-    } catch {
-      setError("Failed to save. Please try again.");
+    } catch (err) {
+      setError(apiErrorMessage(err));
       setSaving(false);
     }
   }
 
   return (
     <div style={{ maxWidth: 640, margin: "0 auto", padding: "24px 16px" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button
           type="button"
@@ -132,73 +172,76 @@ export default function NewJobPage() {
             color: "inherit",
           }}
         >
-          ← Back
+          Back
         </button>
         <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.3px" }}>New Job</h1>
       </div>
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {error && (
-          <div style={{
-            background: "#fee2e2",
-            border: "1px solid #fca5a5",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#b91c1c",
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              background: "#fee2e2",
+              border: "1px solid #fca5a5",
+              borderRadius: 8,
+              padding: "10px 14px",
+              color: "#b91c1c",
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}
 
-        {/* Job Details */}
         <div style={sectionStyle}>
           <p style={sectionTitleStyle}>Job Details</p>
           <Field label="Job Title *">
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Smith Kitchen Renovation" />
+            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Smith Kitchen" />
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Job Type">
-              <select style={inputStyle} value={form.job_type} onChange={(e) => set("job_type", e.target.value)}>
-                {JOB_TYPES.map((t) => <option key={t}>{t}</option>)}
+              <select style={inputStyle} value={form.jobType} onChange={(e) => set("jobType", e.target.value)}>
+                {JOB_TYPES.map((type) => (
+                  <option key={type}>{type}</option>
+                ))}
               </select>
             </Field>
             <Field label="Priority">
               <select style={inputStyle} value={form.priority} onChange={(e) => set("priority", e.target.value)}>
-                {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+                {PRIORITIES.map((priority) => (
+                  <option key={priority}>{priority}</option>
+                ))}
               </select>
             </Field>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Estimated Value">
-              <input style={inputStyle} value={form.estimated_value} onChange={(e) => set("estimated_value", e.target.value)} placeholder="$0.00" />
+              <input style={inputStyle} inputMode="decimal" value={form.estimatedValue} onChange={(e) => set("estimatedValue", e.target.value)} placeholder="$0.00" />
             </Field>
             <Field label="Install Date">
-              <input style={inputStyle} type="date" value={form.install_date} onChange={(e) => set("install_date", e.target.value)} />
+              <input style={inputStyle} type="date" value={form.installationDate} onChange={(e) => set("installationDate", e.target.value)} />
             </Field>
           </div>
         </div>
 
-        {/* Client Details */}
         <div style={sectionStyle}>
           <p style={sectionTitleStyle}>Client Details</p>
           <Field label="Client Name *">
-            <input style={inputStyle} value={form.client_name} onChange={(e) => set("client_name", e.target.value)} placeholder="Full name" />
+            <input style={inputStyle} value={form.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Full name" />
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Phone">
-              <input style={inputStyle} type="tel" value={form.client_phone} onChange={(e) => set("client_phone", e.target.value)} placeholder="04XX XXX XXX" />
+              <input style={inputStyle} type="tel" value={form.clientPhone} onChange={(e) => set("clientPhone", e.target.value)} placeholder="04XX XXX XXX" />
             </Field>
             <Field label="Email">
-              <input style={inputStyle} type="email" value={form.client_email} onChange={(e) => set("client_email", e.target.value)} placeholder="client@email.com" />
+              <input style={inputStyle} type="email" value={form.clientEmail} onChange={(e) => set("clientEmail", e.target.value)} placeholder="client@email.com" />
             </Field>
           </div>
           <Field label="Site Address">
-            <input style={inputStyle} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="Street address, suburb" />
+            <input style={inputStyle} value={form.siteAddress} onChange={(e) => set("siteAddress", e.target.value)} placeholder="Street address, suburb" />
           </Field>
         </div>
 
-        {/* Notes */}
         <div style={sectionStyle}>
           <p style={sectionTitleStyle}>Notes</p>
           <textarea
@@ -206,11 +249,10 @@ export default function NewJobPage() {
             value={form.notes}
             onChange={(e) => set("notes", e.target.value)}
             rows={4}
-            placeholder="Scope, special requirements, client preferences…"
+            placeholder="Scope, special requirements, client preferences"
           />
         </div>
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingBottom: 32 }}>
           <button
             type="button"
@@ -242,7 +284,7 @@ export default function NewJobPage() {
               fontWeight: 600,
             }}
           >
-            {saving ? "Saving…" : "Create Job"}
+            {saving ? "Saving..." : "Create Job"}
           </button>
         </div>
       </form>
