@@ -8,12 +8,13 @@ interface Task {
   id: string;
   title: string;
   description?: string;
-  status?: "open" | "in_progress" | "done" | "blocked";
+  status?: "open" | "in_progress" | "done" | "blocked" | "Overdue";
   priority?: "low" | "normal" | "high" | "urgent";
   dueDate?: string;
   jobId?: string;
   jobNum?: string;
   jobName?: string;
+  _taskType?: "task" | "design";
 }
 
 function taskStatusMeta(status?: string): { label: string; className: string } {
@@ -187,6 +188,11 @@ export default function TasksPage() {
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${priorityMeta.className}`}
                     >
                       {priorityMeta.label}
+                    </span>
+                  )}
+                  {task._taskType === "design" && (
+                    <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                      Design
                     </span>
                   )}
                 </div>
