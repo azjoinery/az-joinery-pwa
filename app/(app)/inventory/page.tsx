@@ -1587,7 +1587,11 @@ function POrderDetail({ po, onBack, onUpdated, onDeleted }: { po: PurchaseOrder;
             <div key={l.id} className="flex justify-between text-sm border-t border-gray-100 pt-1">
               <span className="text-gray-900">
                 {l.description}
-                {!l.stockItemId && <span className="ml-1 text-xs text-gray-400">(ad-hoc — won't update stock)</span>}
+                {!l.stockItemId && (
+                <span className="ml-1 text-xs text-amber-600">
+                 {l.jobId ? "(will create inventory item on receipt)" : "(ad-hoc — won't update stock)"}
+                  </span>
+              )}
               </span>
               <span className="text-gray-600">{l.qtyReceived ?? 0}/{l.qty} {l.unit}</span>
             </div>
