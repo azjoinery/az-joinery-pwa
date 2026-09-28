@@ -293,7 +293,7 @@ const CABINET_LABELS: Record<string, string> = {
   cab_special: "Special",
 };
 
-function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, onDeleteEntry }: {
+function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, canAdjustCap, onDeleteEntry, onCapAdjusted }: {
   loading: boolean;
   period: "today" | "week";
   setPeriod: (value: "today" | "week") => void;
