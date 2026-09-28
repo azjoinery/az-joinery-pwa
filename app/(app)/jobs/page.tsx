@@ -45,12 +45,15 @@ interface BOMItem {
   shortageQty?: number; poRef?: string; eta?: string;
 }
 interface LogEntry { timestamp: string; actor: string; action: string; detail?: string; }
+interface ReleaseListItem { description: string; quantity: number; unit?: string; category?: string; }
 interface Job {
   id: string; ref: string; client: string; description: string;
   status: JobStatus; priority: Priority;
   assignedTo?: { id: string; name: string };
   dueDate?: string; stages: Stage[]; bom: BOMItem[];
   activityLog: LogEntry[]; blockReason?: string; blockDetail?: string;
+  releasedMaterialList?: ReleaseListItem[];
+  releasedHardwareList?: ReleaseListItem[];
 }
 interface Worker { id: string; name: string; role: string; activeJobs: number; load: WorkerLoad; }
 interface POLine { id: string; description: string; qty: number; unit: string; qtyReceived: number; stockItemId?: string; unitCost?: number; }
@@ -575,6 +578,39 @@ function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMat
           </div>
         )}
 
+        {/* Release material list */}
+        {job.releasedMaterialList && job.releasedMaterialList.length > 0 && (
+          <div>
+            <p className="eyebrow mb-2.5">Materials (Released List)</p>
+            <div className="card overflow-hidden">
+              {job.releasedMaterialList.map((item, i) => (
+                <div key={i} className={`flex items-center justify-between px-4 py-3 ${i < job.releasedMaterialList!.length - 1 ? "border-b border-ink-100" : ""}`}>
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink-900">{item.description}</p>
+                    {item.category && <p className="text-xs text-ink-400">{item.category}</p>}
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold text-ink-700 ml-3">{item.quantity} {item.unit || ""}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Release hardware list */}
+        {job.releasedHardwareList && job.releasedHardwareList.length > 0 && (
+          <div>
+            <p className="eyebrow mb-2.5">Hardware (Released List)</p>
+            <div className="card overflow-hidden">
+              {job.releasedHardwareList.map((item, i) => (
+                <div key={i} className={`flex items-center justify-between px-4 py-3 ${i < job.releasedHardwareList!.length - 1 ? "border-b border-ink-100" : ""}`}>
+                  <p className="text-sm text-ink-900">{item.description}</p>
+                  <span className="shrink-0 text-sm font-semibold text-ink-700 ml-3">{item.quantity} {item.unit || "pcs"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Block reason */}
         {(job.status === "Blocked" || job.status === "Waiting Material") && job.blockReason && (
           <div className="alert-danger">
@@ -814,6 +850,8 @@ function SupervisorView() {
   const [reassignJob, setReassignJob] = useState<Job | null>(null);
   const [blockJob, setBlockJob] = useState<Job | null>(null);
   const [selectedWorker, setSelectedWorker] = useState("");
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -898,7 +936,7 @@ function SupervisorView() {
                   const overdue = job.dueDate && isPast(parseISO(job.dueDate)) && job.status !== "Done";
                   const current = activeStage(job);
                   return (
-                    <tr key={job.id} className={job.status === "Blocked" || overdue ? "bg-danger-light/30" : ""}>
+                    <tr key={job.id} className={`cursor-pointer hover:bg-ink-50 ${job.status === "Blocked" || overdue ? "bg-danger-light/30" : ""}`} onClick={() => { setDetailJob(job); setDetailOpen(true); }}>
                       <td><span className="ref">{job.ref}</span></td>
                       <td className="font-medium text-ink-900">{job.client}</td>
                       <td><span className={`badge ${STATUS_BADGE[job.status]}`}>{job.status}</span></td>
@@ -907,7 +945,7 @@ function SupervisorView() {
                       <td>{dueBadge(job.dueDate) ?? <span className="text-ink-400">—</span>}</td>
                       <td><span className={`badge ${PRIORITY_BADGE[job.priority]}`}>{job.priority}</span></td>
                       <td>
-                        <div className="flex gap-1.5">
+                        <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <button
                             className="btn-sm btn-secondary"
                             onClick={() => { setReassignJob(job); setSelectedWorker(job.assignedTo?.id ?? ""); }}
@@ -971,6 +1009,13 @@ function SupervisorView() {
       <BlockJobSheet
         open={!!blockJob} onClose={() => setBlockJob(null)}
         jobRef={blockJob?.ref ?? ""} onSubmit={handleBlock}
+      />
+
+      <JobDetailSheet
+        job={detailJob} open={detailOpen} onClose={() => setDetailOpen(false)}
+        onBlock={(j) => { setDetailJob(null); setDetailOpen(false); setBlockJob(j); }}
+        onStartStage={() => {}}
+        onRecordMaterial={() => {}}
       />
     </div>
   );

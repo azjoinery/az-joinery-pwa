@@ -657,6 +657,7 @@ function JobDesignDetail({
   const [useOverride, setUseOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const [productionNotes, setProductionNotes] = useState("");
+  const [hwList, setHwList] = useState<Array<{ description: string; qty: number; unit: string }>>([]);
 
   const canOverrideRelease = !!user && TOP_ROLES.includes(user.role);
   const isReleased = currentJob.releaseStatus === "Released";
@@ -920,7 +921,12 @@ function JobDesignDetail({
     setReleaseSaving(true);
     setReleaseError(null);
     try {
-      const body: Record<string, unknown> = { productionNotes };
+      const body: Record<string, unknown> = {
+        productionNotes,
+        hardwareList: hwList
+          .filter((h) => h.description.trim())
+          .map((h) => ({ description: h.description.trim(), quantity: h.qty, unit: h.unit || "pcs" })),
+      };
       if (useOverride) {
         body.override = true;
         body.overrideReason = overrideReason;
@@ -1596,6 +1602,59 @@ function JobDesignDetail({
             </div>
           ) : (
             <>
+              {/* Hardware list — entered at release time */}
+              <div className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Hardware list</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Hinges, handles, runners, etc. for the floor team.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHwList((prev) => [...prev, { description: "", qty: 1, unit: "pcs" }])}
+                    className="text-xs font-semibold text-blue-600 hover:underline"
+                  >
+                    + Add item
+                  </button>
+                </div>
+                {hwList.length === 0 ? (
+                  <p className="text-xs text-gray-400">No hardware added yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {hwList.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <input
+                          value={item.description}
+                          onChange={(e) => setHwList((prev) => prev.map((r, j) => j === i ? { ...r, description: e.target.value } : r))}
+                          placeholder="Description (e.g. 170° Hinge)"
+                          className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.qty}
+                          onChange={(e) => setHwList((prev) => prev.map((r, j) => j === i ? { ...r, qty: Number(e.target.value) } : r))}
+                          className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm text-center"
+                        />
+                        <input
+                          value={item.unit}
+                          onChange={(e) => setHwList((prev) => prev.map((r, j) => j === i ? { ...r, unit: e.target.value } : r))}
+                          placeholder="unit"
+                          className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setHwList((prev) => prev.filter((_, j) => j !== i))}
+                          className="text-red-400 hover:text-red-600 px-1 text-sm"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {releaseError && (
                 <div className="alert-danger">{releaseError}</div>
               )}
