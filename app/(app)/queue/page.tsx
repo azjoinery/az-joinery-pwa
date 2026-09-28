@@ -216,12 +216,16 @@ export default function ProductionPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Silent 30-second poll — picks up counter taps from the dashboard
+  // Silent 30-second poll — picks up newly released jobs and live progress
   // without requiring a manual refresh. No spinner so it doesn't flash.
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
-        const prog = await api.get<Record<string, Progress>>("/jobs/progress");
+        const [q, prog] = await Promise.all([
+          api.get<{ count: number; jobs: QueueJob[] }>("/pipeline/production-queue"),
+          api.get<Record<string, Progress>>("/jobs/progress"),
+        ]);
+        if (q) setQueue(q.jobs || []);
         if (!prog) return;
         setProgress(prog);
         await Promise.allSettled(

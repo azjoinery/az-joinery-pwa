@@ -695,6 +695,17 @@ function CabinetmakerView({ userId }: { userId: string }) {
     })();
   }, [userId]);
 
+  // 60-second silent poll — reflects queue stage advancements in the job badge
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const data = await api.get<Job[]>("/jobs");
+        if (data) setJobs(data);
+      } catch { /* skip on network blip */ }
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const filtered = filter === "All" ? jobs : jobs.filter(j => j.status === filter);
   const stats = {
     active:  jobs.filter(j => j.status === "In Progress").length,
@@ -862,6 +873,18 @@ function SupervisorView() {
         setJobs(MOCK_JOBS); setWorkers(MOCK_WORKERS);
       } finally { setLoading(false); }
     })();
+  }, []);
+
+  // 60-second silent poll — reflects queue stage advancements in the jobs table
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
+        if (j) setJobs(j);
+        if (w) setWorkers(w);
+      } catch { /* skip on network blip */ }
+    }, 60_000);
+    return () => clearInterval(timer);
   }, []);
 
   const stats = {

@@ -187,6 +187,16 @@ function ExecutiveOverview() {
     };
   }, [seesMoney]);
 
+  // 60-second silent poll — keeps the "In queue" counter current after a job is released
+  useEffect(() => {
+    const timer = setInterval(() => {
+      api.get<PipelineSummary>("/pipeline/summary")
+        .then((d) => { if (d) setSummary(d); })
+        .catch(() => {});
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const firstName = user?.name?.split(" ")[0] || "there";
   const totals = summary?.totals;
   const stages = summary?.stages || [];
