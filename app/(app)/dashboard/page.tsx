@@ -862,7 +862,9 @@ function FloorLogDashboard() {
         const today = new Date().toISOString().split("T")[0];
         const { counts: c, note: n, assemblyJobId: aj, assemblyDone: ad } = formRef.current;
         const rows = materialsRef.current
-          .filter((m) => m.stockItemId && ((m.qty || 0) > 0 || (m.wastageQty || 0) > 0))
+          .filter((m) => m.stockItemId && (
+            (m.qty || 0) > 0 || (m.wastageQty || 0) > 0 || (m.assignedQty || 0) > 0
+          ))
           .map((m) => {
             const job = jobList.find((j) => j.id === m.jobId);
             return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
@@ -891,7 +893,9 @@ function FloorLogDashboard() {
     try {
       const today = new Date().toISOString().split("T")[0];
       const cleanMaterials = materials
-        .filter((m) => m.stockItemId && ((m.qty || 0) > 0 || (m.wastageQty || 0) > 0))
+        .filter((m) => m.stockItemId && (
+          (m.qty || 0) > 0 || (m.wastageQty || 0) > 0 || (m.assignedQty || 0) > 0
+        ))
         .map((m) => {
           const job = jobList.find((j) => j.id === m.jobId);
           return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
