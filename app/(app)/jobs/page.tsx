@@ -66,7 +66,7 @@ interface PurchaseOrder {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor", "supervisor"];
+const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
 const OFFICE_MGMT_ROLES = new Set(["managing_director", "manager", "department_manager", "admin", "office"]);
 const JOB_MANAGE_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin", "supervisor",
@@ -1387,13 +1387,12 @@ function OfficeTabContent() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3-TAB MANAGEMENT WORKSPACE  (Office · Design · Production)
+// 2-TAB MANAGEMENT WORKSPACE  (Design · Workshop)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type WorkspaceTab = "office" | "design" | "production";
+type WorkspaceTab = "design" | "production";
 
 const WORKSPACE_TABS: { key: WorkspaceTab; label: string }[] = [
-  { key: "office",     label: "Office" },
   { key: "design",     label: "Design" },
   { key: "production", label: "Workshop" },
 ];
@@ -1418,15 +1417,14 @@ function ManagementJobsWorkspace({ canManage, canCreate }: { canManage: boolean;
       <div className="page-header">
         <div>
           <h1 className="page-title">Jobs</h1>
-          <p className="page-subtitle">Office · Design · Workshop</p>
+          <p className="page-subtitle">Design · Workshop</p>
         </div>
         {canCreate && <NewJobButton />}
       </div>
 
       {/* Scrollable tab bar — safe on narrow phones */}
       {/* mb-0 on the Design tab: DesignWorkspace provides its own top padding, so
-          stacking mb-5 + internal page padding created an oversized gap. Office and
-          Production tabs have no internal top padding, so they still need mb-5. */}
+          stacking mb-5 + internal page padding creates an oversized gap. */}
       <div className={`-mx-4 overflow-x-auto px-4 ${tab === "design" ? "mb-0" : "mb-5"}`}>
         <div className="tabs min-w-max">
           {WORKSPACE_TABS.map(t => (
@@ -1441,7 +1439,6 @@ function ManagementJobsWorkspace({ canManage, canCreate }: { canManage: boolean;
         </div>
       </div>
 
-      {tab === "office"     && <OfficeTabContent />}
       {tab === "design"     && <DesignWorkspace />}
       {tab === "production" && <JobsKanban canManage={canManage} />}
     </div>
@@ -1473,6 +1470,7 @@ export default function JobsPage() {
     );
   }
 
+  if (user.role === "supervisor") return <SupervisorView />;
   if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
 }

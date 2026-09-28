@@ -743,6 +743,7 @@ function FloorLogDashboard() {
     status?: string;
     currentStatus?: string;
     dueDate?: string;
+    releasedMaterialList?: { description: string; quantity: number; unit?: string; category?: string }[];
   }[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [asmOpen, setAsmOpen] = useState(false);
@@ -896,6 +897,10 @@ function FloorLogDashboard() {
     .filter((m) => (m.jobId || "") === selectedJobId)
     .some((m) => (m.assignedQty || 0) > 0);
 
+  const selectedJobReleased = jobList.find(j => j.id === selectedJobId)?.releasedMaterialList || [];
+  const releasedSheets   = selectedJobReleased.filter(m => !m.category || m.category === "Sheets" || m.category === "Other" || m.category === "Offcuts");
+  const releasedHardware = selectedJobReleased.filter(m => m.category === "Hardware");
+
   return (
     <>
       <div className="page pb-32">
@@ -978,6 +983,20 @@ function FloorLogDashboard() {
                   Each tap = 1 sheet off the shelf.
                 </p>
               </div>
+              {/* Released material list for this job */}
+              {releasedSheets.length > 0 && (
+                <div className="mb-3 overflow-hidden rounded-xl border border-blue-100 bg-blue-50">
+                  <div className="border-b border-blue-100 px-4 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-600">Required for this job</p>
+                  </div>
+                  {releasedSheets.map((item, idx) => (
+                    <div key={idx} className={`flex items-center justify-between px-4 py-2.5 text-sm ${idx < releasedSheets.length - 1 ? "border-b border-blue-100" : ""}`}>
+                      <span className="text-ink-800">{item.description}</span>
+                      <span className="font-semibold text-ink-700">{item.quantity}{item.unit ? ` ${item.unit}` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {rows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
                   No boards yet.
@@ -1047,6 +1066,20 @@ function FloorLogDashboard() {
                   Hinges, runners, handles — each tap deducts stock.
                 </p>
               </div>
+              {/* Released hardware list for this job */}
+              {releasedHardware.length > 0 && (
+                <div className="mb-3 overflow-hidden rounded-xl border border-green-100 bg-green-50">
+                  <div className="border-b border-green-100 px-4 py-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-green-700">Required for this job</p>
+                  </div>
+                  {releasedHardware.map((item, idx) => (
+                    <div key={idx} className={`flex items-center justify-between px-4 py-2.5 text-sm ${idx < releasedHardware.length - 1 ? "border-b border-green-100" : ""}`}>
+                      <span className="text-ink-800">{item.description}</span>
+                      <span className="font-semibold text-ink-700">{item.quantity}{item.unit ? ` ${item.unit}` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {rows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
                   No hardware yet.
