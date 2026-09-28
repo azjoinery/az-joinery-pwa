@@ -56,6 +56,7 @@ interface Job {
   releasedHardwareList?: ReleaseListItem[];
 }
 interface Worker { id: string; name: string; role: string; activeJobs: number; load: WorkerLoad; }
+interface Employee { id: string; name: string; role: string; }
 interface POLine { id: string; description: string; qty: number; unit: string; qtyReceived: number; stockItemId?: string; unitCost?: number; }
 interface PurchaseOrder {
   id: string; poNumber: string; supplier: string; status: POStatus;
@@ -66,6 +67,7 @@ interface PurchaseOrder {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
+const OFFICE_MGMT_ROLES = new Set(["managing_director", "manager", "department_manager", "admin", "office"]);
 const JOB_MANAGE_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin", "supervisor",
 ]);
@@ -1068,12 +1070,20 @@ function OfficeTabContent() {
   const [poFilter, setPOFilter] = useState<"All" | POStatus | "cancelled">("All");
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [receiveQtys, setReceiveQtys] = useState<Record<string, number>>({});
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [assignJob, setAssignJob] = useState<Job | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
 
   useEffect(() => {
     (async () => {
       try {
-        const [j, p] = await Promise.all([api.get<Job[]>("/jobs"), api.get<PurchaseOrder[]>("/purchase-orders")]);
+        const [j, p, emps] = await Promise.all([
+          api.get<Job[]>("/jobs"),
+          api.get<PurchaseOrder[]>("/purchase-orders"),
+          api.get<Employee[]>("/users/employees"),
+        ]);
         setJobs(j); setPOs(p);
+        setEmployees((emps || []).filter(e => OFFICE_MGMT_ROLES.has(e.role)));
       } catch {
         setJobs(MOCK_JOBS); setPOs(MOCK_POS);
       } finally { setLoading(false); }
@@ -1108,6 +1118,18 @@ function OfficeTabContent() {
       setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "received" as POStatus } : p));
     } catch { /* handle error */ }
     setReceivingId(null);
+  };
+
+  const handleOfficeAssign = async () => {
+    if (!assignJob || !selectedEmployee) return;
+    try {
+      await api.patch(`/jobs/${assignJob.id}/assign`, { worker_id: selectedEmployee });
+      const emp = employees.find(e => e.id === selectedEmployee);
+      setJobs(prev => prev.map(j => j.id !== assignJob.id ? j : {
+        ...j, assignedTo: emp ? { id: emp.id, name: emp.name } : j.assignedTo,
+      }));
+    } catch { /* keep modal open on error */ }
+    setAssignJob(null);
   };
 
   return (
@@ -1160,11 +1182,19 @@ function OfficeTabContent() {
                     </div>
                   </div>
                 ))}
-                {!job.bom.some(b => b.poRef) && (
-                  <button className="btn-primary btn-sm mt-1" onClick={() => handleCreatePO(job.id, shortage[0]?.id ?? "")}>
-                    Create PO
+                <div className="flex gap-2 mt-1">
+                  {!job.bom.some(b => b.poRef) && (
+                    <button className="btn-primary btn-sm" onClick={() => handleCreatePO(job.id, shortage[0]?.id ?? "")}>
+                      Create PO
+                    </button>
+                  )}
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={() => { setAssignJob(job); setSelectedEmployee(job.assignedTo?.id ?? ""); }}
+                  >
+                    {job.assignedTo?.name ? `Assigned: ${job.assignedTo.name}` : "Assign"}
                   </button>
-                )}
+                </div>
               </div>
             );
           })}
@@ -1247,6 +1277,39 @@ function OfficeTabContent() {
           </div>
         </div>
       )}
+
+      <Modal open={!!assignJob} onClose={() => setAssignJob(null)} title={`Assign — ${assignJob?.ref ?? ""}`}>
+        {assignJob && (
+          <div className="flex flex-col gap-4">
+            <div className="p-3 rounded-lg bg-ink-50 text-sm">
+              <p className="text-ink-500 text-xs">Currently assigned to</p>
+              <p className="font-semibold text-ink-900">{assignJob.assignedTo?.name ?? "Unassigned"}</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {employees.map(e => (
+                <label
+                  key={e.id}
+                  className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                    selectedEmployee === e.id ? "border-brand-orange bg-brand-orange/5" : "border-ink-200 hover:border-ink-300"
+                  }`}
+                  onClick={() => setSelectedEmployee(e.id)}
+                >
+                  <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all ${
+                    selectedEmployee === e.id ? "border-brand-orange bg-brand-orange" : "border-ink-300"
+                  }`} />
+                  <div className="flex-1">
+                    <p className="font-semibold text-ink-900">{e.name}</p>
+                    <p className="text-xs text-ink-500 capitalize">{e.role.replace(/_/g, " ")}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <button className="btn-primary w-full" disabled={!selectedEmployee} onClick={handleOfficeAssign}>
+              Assign
+            </button>
+          </div>
+        )}
+      </Modal>
     </>
   );
 }

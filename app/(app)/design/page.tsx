@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 
@@ -239,6 +239,32 @@ function actionLabel(action: string): string {
   return action;
 }
 
+const FLOOR_ROLE_SET = new Set(["cabinet_maker", "installer", "employee", "contractor"]);
+
+function DesignModal({ open, onClose, title, children }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90dvh]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+          <button type="button" onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 text-lg">
+            ✕
+          </button>
+        </div>
+        <div className="overflow-y-auto p-5 flex-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DesignWorkspace() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<DesignJob[]>([]);
@@ -250,6 +276,8 @@ export default function DesignWorkspace() {
   const [designers, setDesigners] = useState<Employee[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
+  const [assignModalJob, setAssignModalJob] = useState<DesignJob | null>(null);
+  const [selectedDesignerId, setSelectedDesignerId] = useState<string>("");
 
   const canManageDesign = !!user && [
     "managing_director", "manager", "department_manager", "admin", "office", "drafter",
@@ -336,18 +364,14 @@ export default function DesignWorkspace() {
 
       {canManageDesign && (
         <div className="grid grid-cols-2 gap-2">
-          <select
-            aria-label={`Assign designer for job ${job.jobNum}`}
-            value={job.assignedDesignerId || ""}
+          <button
+            type="button"
             disabled={savingJobId === job.id}
-            onChange={(event) => updateJobFromBoard(job.id, { assignedDesignerId: event.target.value })}
-            className="min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-700"
+            onClick={() => { setAssignModalJob(job); setSelectedDesignerId(job.assignedDesignerId || ""); }}
+            className="min-w-0 rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-medium text-gray-700 hover:border-orange-300 text-left truncate"
           >
-            <option value="">Assign</option>
-            {designers.map((designer) => (
-              <option key={designer.id} value={designer.id}>{designer.name}</option>
-            ))}
-          </select>
+            {job.assignedDesignerName || "Assign"}
+          </button>
 
           <select
             aria-label={`Move job ${job.jobNum} to another stage`}
@@ -530,6 +554,57 @@ export default function DesignWorkspace() {
             ))}
           </div>
         )}
+
+        <DesignModal
+          open={!!assignModalJob}
+          onClose={() => setAssignModalJob(null)}
+          title={`Assign — #${assignModalJob?.jobNum}`}
+        >
+          {assignModalJob && (
+            <div className="flex flex-col gap-4">
+              <div className="p-3 rounded-lg bg-gray-50 text-sm">
+                <p className="text-gray-500 text-xs">Currently assigned to</p>
+                <p className="font-semibold text-gray-900">{assignModalJob.assignedDesignerName ?? "Unassigned"}</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                {designers
+                  .filter(d => !FLOOR_ROLE_SET.has(d.role))
+                  .map(d => (
+                    <label
+                      key={d.id}
+                      className={`flex items-center gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                        selectedDesignerId === d.id
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-gray-200 hover:border-gray-300"
+                      }`}
+                      onClick={() => setSelectedDesignerId(d.id)}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all ${
+                        selectedDesignerId === d.id ? "border-orange-500 bg-orange-500" : "border-gray-300"
+                      }`} />
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900">{d.name}</p>
+                        <p className="text-xs text-gray-500 capitalize">{d.role.replace(/_/g, " ")}</p>
+                      </div>
+                    </label>
+                  ))}
+              </div>
+              <button
+                type="button"
+                className="w-full rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-40 hover:bg-orange-600"
+                disabled={!selectedDesignerId}
+                onClick={async () => {
+                  if (assignModalJob && selectedDesignerId) {
+                    await updateJobFromBoard(assignModalJob.id, { assignedDesignerId: selectedDesignerId });
+                    setAssignModalJob(null);
+                  }
+                }}
+              >
+                Assign
+              </button>
+            </div>
+          )}
+        </DesignModal>
       </div>
     );
   }
