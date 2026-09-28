@@ -742,6 +742,9 @@ function FloorLogDashboard() {
     assignedStaff?: string;
     status?: string;
     currentStatus?: string;
+    releaseStatus?: string;
+    releasedBy?: string;
+    releasedAt?: string;
     dueDate?: string;
     releasedMaterialList?: { description: string; quantity: number; unit?: string; category?: string; stockItemId?: string }[];
   }[]>([]);
@@ -760,27 +763,6 @@ function FloorLogDashboard() {
   useEffect(() => { materialsRef.current = materials; }, [materials]);
   useEffect(() => { formRef.current = { counts, note, assemblyJobId, assemblyDone }; }, [counts, note, assemblyJobId, assemblyDone]);
 
-  // When a released job is selected, pre-populate its released material list items
-  // into the local materials array (qty=0) so they appear as live inventory counters.
-  // Items with qty=0 are filtered out of saves, so this is safe and non-destructive.
-  useEffect(() => {
-    if (!selectedJobId || jobList.length === 0) return;
-    const job = jobList.find(j => j.id === selectedJobId);
-    if (!job?.releasedMaterialList?.length) return;
-    setMaterials(prev => {
-      const next = [...prev];
-      let changed = false;
-      for (const item of job.releasedMaterialList!) {
-        if (!item.stockItemId) continue;
-        const exists = next.some(m => m.stockItemId === item.stockItemId && (m.jobId || "") === selectedJobId);
-        if (!exists) {
-          next.push({ stockItemId: item.stockItemId, jobId: selectedJobId, qty: 0, wastageQty: 0 });
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [selectedJobId, jobList]);
 
   const cabinetTypes = [
     { key: "cab_small",     label: "Small"    },
@@ -919,9 +901,8 @@ function FloorLogDashboard() {
 
   const firstName = user?.name?.split(" ")[0] ?? "";
 
-  const hasAssignedMats = materials
-    .filter((m) => (m.jobId || "") === selectedJobId)
-    .some((m) => (m.assignedQty || 0) > 0);
+  const selectedJob = jobList.find(j => j.id === selectedJobId);
+  const hasReleasedMaterials = !!(selectedJobId && selectedJob?.releasedMaterialList?.length);
 
 
   return (
@@ -955,16 +936,19 @@ function FloorLogDashboard() {
         {/* ── Materials banner ── */}
         {selectedJobId && (
           <div
-            className={`mb-4 flex items-center gap-2.5 rounded-xl px-4 py-3 text-sm font-semibold ${
-              hasAssignedMats
-                ? "bg-green-50 text-green-800"
-                : "bg-amber-50 text-amber-800"
+            className={`mb-4 rounded-xl px-4 py-3 ${
+              hasReleasedMaterials
+                ? "bg-green-50"
+                : "bg-amber-50"
             }`}
           >
-            <span className="text-base">{hasAssignedMats ? "✓" : "⚠"}</span>
-            {hasAssignedMats
-              ? "Full materials ready"
-              : "Partial materials — production can start"}
+            <div className={`flex items-center gap-2 text-sm font-semibold ${hasReleasedMaterials ? "text-green-800" : "text-amber-800"}`}>
+              <span className="text-base">{hasReleasedMaterials ? "✓" : "⚠"}</span>
+              {hasReleasedMaterials ? "Full materials ready" : "Partial materials — production can start"}
+            </div>
+            {hasReleasedMaterials && (
+              <p className="mt-0.5 text-xs text-green-700">All CNC &amp; hardware loaded and available on floor.</p>
+            )}
           </div>
         )}
 
@@ -991,46 +975,98 @@ function FloorLogDashboard() {
 
         {/* CNC boards */}
         {(() => {
-          const rows = materials
+          const relList = selectedJob?.releasedMaterialList || [];
+          const relDate = selectedJob?.releasedAt
+            ? new Date(selectedJob.releasedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" })
+            : "";
+          const relBy = selectedJob?.releasedBy || "";
+          const loadedMeta = [relBy ? `Loaded by ${relBy}` : null, relDate ? `released ${relDate}` : null].filter(Boolean).join(" · ");
+
+          // Items from the released material list that are CNC (anything that's not hardware)
+          const relCnc = relList.filter(item => !((item.category || "").toLowerCase().includes("hardware")));
+
+          // Manually added materials in the entry for this job that are CNC and not already in relCnc
+          const manualCnc = materials
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
-              const stk = stockList.find((s) => s.id === m.stockItemId);
+              if ((m.jobId || "") !== selectedJobId) return false;
+              const stk = stockList.find(s => s.id === m.stockItemId);
               if (pickDept(stk) !== "cnc") return false;
-              return (m.jobId || "") === selectedJobId;
+              return !relCnc.some(r => r.stockItemId && r.stockItemId === m.stockItemId);
             });
+
+          const isEmpty = relCnc.length === 0 && manualCnc.length === 0;
           return (
             <section className="mb-6">
-              <div className="mb-3">
-                <h2 className="section-title">CNC boards</h2>
-                <p className="mt-0.5 text-xs text-ink-400">
-                  Each tap = 1 sheet off the shelf.
-                </p>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="section-title">CNC boards</h2>
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    Loaded at release · each tap records 1 sheet used.
+                  </p>
+                </div>
+                <button type="button" onClick={() => { setPickerOpen({ dept: "cnc" }); setPickerQ(""); }}
+                  className="text-xs font-semibold text-brand-orange">+ Add</button>
               </div>
-              {rows.length === 0 ? (
+              {isEmpty ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
                   No boards yet.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {rows.map(({ m, i }) => {
-                    const stk = stockList.find((s) => s.id === m.stockItemId);
-                    const low =
-                      stk &&
-                      typeof stk.on_hand_qty === "number" &&
-                      stk.on_hand_qty <= 3;
+                  {relCnc.map((item, idx) => {
+                    const sid = item.stockItemId || "";
+                    const matIdx = sid
+                      ? materials.findIndex(m => m.stockItemId === sid && (m.jobId || "") === selectedJobId)
+                      : -1;
+                    const mat = matIdx >= 0 ? materials[matIdx] : null;
+                    const stk = sid ? stockList.find(s => s.id === sid) : null;
+                    const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
+                    return (
+                      <MaterialRow
+                        key={`rel-cnc-${idx}`}
+                        name={item.description}
+                        detail={[
+                          item.quantity ? `${item.quantity}${item.unit ? " " + item.unit : ""}` : null,
+                          item.category || "CNC board",
+                        ].filter(Boolean).join(" · ")}
+                        meta={loadedMeta}
+                        low={low}
+                        assignedQty={mat?.assignedQty}
+                        assignedByName={mat?.assignedByName}
+                        unit={item.unit}
+                        qty={mat?.qty || 0}
+                        onMinus={() => { if (matIdx >= 0) bumpMaterial(matIdx, -1); }}
+                        onPlus={() => {
+                          if (!sid) return;
+                          if (matIdx >= 0) {
+                            bumpMaterial(matIdx, 1);
+                          } else {
+                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: 1, wastageQty: 0 }]);
+                            scheduleSave();
+                          }
+                        }}
+                        onQtyChange={(v) => {
+                          if (matIdx >= 0) {
+                            setMaterialQty(matIdx, v);
+                          } else if (v > 0 && sid) {
+                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: v, wastageQty: 0 }]);
+                            scheduleSave();
+                          }
+                        }}
+                        showAssigned={false}
+                      />
+                    );
+                  })}
+                  {manualCnc.map(({ m, i }) => {
+                    const stk = stockList.find(s => s.id === m.stockItemId);
+                    const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
                     return (
                       <MaterialRow
                         key={`cnc${i}`}
                         name={stk?.name || "Material"}
-                        detail={[
-                          stk?.unit,
-                          typeof stk?.on_hand_qty === "number"
-                            ? `${stk.on_hand_qty} on hand`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        low={!!low}
+                        detail={[stk?.unit, typeof stk?.on_hand_qty === "number" ? `${stk.on_hand_qty} on hand` : null].filter(Boolean).join(" · ")}
+                        low={low}
                         assignedQty={m.assignedQty}
                         assignedByName={m.assignedByName}
                         unit={stk?.unit}
@@ -1046,10 +1082,7 @@ function FloorLogDashboard() {
               )}
               <button
                 type="button"
-                onClick={() => {
-                  setPickerOpen({ dept: "cnc" });
-                  setPickerQ("");
-                }}
+                onClick={() => { setPickerOpen({ dept: "cnc" }); setPickerQ(""); }}
                 className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
               >
                 + Add board from stock
@@ -1060,46 +1093,98 @@ function FloorLogDashboard() {
 
         {/* Hardware fitted */}
         {(() => {
-          const rows = materials
+          const relList = selectedJob?.releasedMaterialList || [];
+          const relDate = selectedJob?.releasedAt
+            ? new Date(selectedJob.releasedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" })
+            : "";
+          const relBy = selectedJob?.releasedBy || "";
+          const loadedMeta = [relBy ? `Loaded by ${relBy}` : null, relDate ? `released ${relDate}` : null].filter(Boolean).join(" · ");
+
+          // Items from the released material list that are hardware
+          const relHw = relList.filter(item => (item.category || "").toLowerCase().includes("hardware"));
+
+          // Manually added hardware in the entry not already in relHw
+          const manualHw = materials
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
-              const stk = stockList.find((s) => s.id === m.stockItemId);
+              if ((m.jobId || "") !== selectedJobId) return false;
+              const stk = stockList.find(s => s.id === m.stockItemId);
               if (pickDept(stk) !== "hardware") return false;
-              return (m.jobId || "") === selectedJobId;
+              return !relHw.some(r => r.stockItemId && r.stockItemId === m.stockItemId);
             });
+
+          const isEmpty = relHw.length === 0 && manualHw.length === 0;
           return (
             <section className="mb-6">
-              <div className="mb-3">
-                <h2 className="section-title">Hardware fitted</h2>
-                <p className="mt-0.5 text-xs text-ink-400">
-                  Hinges, runners, handles — each tap deducts stock.
-                </p>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="section-title">Hardware fitted</h2>
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    Hinges, runners, handles — each tap deducts stock.
+                  </p>
+                </div>
+                <button type="button" onClick={() => { setPickerOpen({ dept: "hardware" }); setPickerQ(""); }}
+                  className="text-xs font-semibold text-brand-orange">+ Add</button>
               </div>
-              {rows.length === 0 ? (
+              {isEmpty ? (
                 <div className="rounded-xl border border-dashed border-ink-200 p-5 text-center text-sm text-ink-400">
                   No hardware yet.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {rows.map(({ m, i }) => {
-                    const stk = stockList.find((s) => s.id === m.stockItemId);
-                    const low =
-                      stk &&
-                      typeof stk.on_hand_qty === "number" &&
-                      stk.on_hand_qty <= 3;
+                  {relHw.map((item, idx) => {
+                    const sid = item.stockItemId || "";
+                    const matIdx = sid
+                      ? materials.findIndex(m => m.stockItemId === sid && (m.jobId || "") === selectedJobId)
+                      : -1;
+                    const mat = matIdx >= 0 ? materials[matIdx] : null;
+                    const stk = sid ? stockList.find(s => s.id === sid) : null;
+                    const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
+                    return (
+                      <MaterialRow
+                        key={`rel-hw-${idx}`}
+                        name={item.description}
+                        detail={[
+                          item.quantity ? `${item.quantity}${item.unit ? " " + item.unit : ""}` : null,
+                          item.category || "Hardware",
+                        ].filter(Boolean).join(" · ")}
+                        meta={loadedMeta}
+                        low={low}
+                        assignedQty={mat?.assignedQty}
+                        assignedByName={mat?.assignedByName}
+                        unit={item.unit}
+                        qty={mat?.qty || 0}
+                        onMinus={() => { if (matIdx >= 0) bumpMaterial(matIdx, -1); }}
+                        onPlus={() => {
+                          if (!sid) return;
+                          if (matIdx >= 0) {
+                            bumpMaterial(matIdx, 1);
+                          } else {
+                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: 1, wastageQty: 0 }]);
+                            scheduleSave();
+                          }
+                        }}
+                        onQtyChange={(v) => {
+                          if (matIdx >= 0) {
+                            setMaterialQty(matIdx, v);
+                          } else if (v > 0 && sid) {
+                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: v, wastageQty: 0 }]);
+                            scheduleSave();
+                          }
+                        }}
+                        showAssigned={false}
+                      />
+                    );
+                  })}
+                  {manualHw.map(({ m, i }) => {
+                    const stk = stockList.find(s => s.id === m.stockItemId);
+                    const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
                     return (
                       <MaterialRow
                         key={`hw${i}`}
                         name={stk?.name || "Material"}
-                        detail={[
-                          stk?.unit,
-                          typeof stk?.on_hand_qty === "number"
-                            ? `${stk.on_hand_qty} on hand`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                        low={!!low}
+                        detail={[stk?.unit, typeof stk?.on_hand_qty === "number" ? `${stk.on_hand_qty} on hand` : null].filter(Boolean).join(" · ")}
+                        low={low}
                         assignedQty={m.assignedQty}
                         assignedByName={m.assignedByName}
                         unit={stk?.unit}
@@ -1115,10 +1200,7 @@ function FloorLogDashboard() {
               )}
               <button
                 type="button"
-                onClick={() => {
-                  setPickerOpen({ dept: "hardware" });
-                  setPickerQ("");
-                }}
+                onClick={() => { setPickerOpen({ dept: "hardware" }); setPickerQ(""); }}
                 className="mt-3 w-full rounded-xl border border-ink-200 bg-white py-3.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
               >
                 + Add hardware from stock
@@ -1407,6 +1489,7 @@ function FloorLogDashboard() {
 function MaterialRow({
   name,
   detail,
+  meta,
   low,
   assignedQty,
   assignedByName,
@@ -1419,6 +1502,7 @@ function MaterialRow({
 }: {
   name: string;
   detail: string;
+  meta?: string;
   low: boolean;
   assignedQty?: number;
   assignedByName?: string;
@@ -1439,6 +1523,9 @@ function MaterialRow({
             <span className="ml-1 font-semibold text-red-600"> · low stock</span>
           )}
         </div>
+        {meta && (
+          <div className="mt-0.5 truncate text-[11px] text-ink-400">{meta}</div>
+        )}
         {showAssigned && (assignedQty || 0) > 0 && (
           <div className="mt-1 text-[11px] font-medium text-brand-orange-dark">
             Target: {assignedQty} {unit || ""}
