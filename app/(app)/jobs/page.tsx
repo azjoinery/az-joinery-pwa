@@ -1443,6 +1443,6 @@ export default function JobsPage() {
   }
 
   if (user.role === "supervisor") return <SupervisorView />;
-  if (user.role === "installer") return <CabinetmakerView userId={user.id} />;
+  if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
 }

@@ -131,11 +131,11 @@ const ROLE_PAGES: Partial<Record<Role, PageKey[]>> = {
   // Drafter: DASHBOARD | JOBS | TASKS | BRIEFS | VARIATION (5 primary tabs)
   drafter: ["dashboard", "jobs", "tasks", "briefs", "variations"],
 
-  // Floor workers — daily production log and build queue.
-  cabinet_maker: ["dashboard", "tasks", "queue", "materials"],
-  installer:     ["dashboard", "tasks"],
-  employee:      ["dashboard", "tasks", "queue", "materials"],
-  contractor:    ["dashboard", "tasks"],
+  // Floor workers — daily log, build queue, and their assigned jobs.
+  cabinet_maker: ["dashboard", "jobs", "tasks", "queue", "materials"],
+  installer:     ["dashboard", "jobs", "tasks"],
+  employee:      ["dashboard", "jobs", "tasks", "queue", "materials"],
+  contractor:    ["dashboard", "jobs", "tasks"],
 };
 
 const SAFE_DEFAULT: PageKey[] = ["dashboard", "tasks"];

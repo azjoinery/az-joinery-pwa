@@ -87,6 +87,16 @@ type AnalyticsSummary = {
   overdueAmount: number;
 };
 
+// ─── PO types ────────────────────────────────────────────────────────────────
+
+type POStatus = "draft" | "sent" | "confirmed" | "partial" | "received" | "cancelled";
+interface POLine { id: string; description: string; qty: number; unit: string; qtyReceived: number; unitCost?: number; }
+interface PurchaseOrder {
+  id: string; poNumber: string; supplier: string; status: POStatus;
+  expectedDate?: string; lines: POLine[]; notes?: string;
+  createdAt?: string; freightCost?: number; createdBy?: string;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const EXECUTIVE_ROLES = new Set([
@@ -102,6 +112,21 @@ const CAN_ORDER = new Set([
   "managing_director",
 ]);
 
+const PO_STATUS_BADGE: Record<POStatus, string> = {
+  draft: "bg-ink-100 text-ink-600",
+  sent: "bg-blue-100 text-blue-700",
+  confirmed: "bg-blue-100 text-blue-700",
+  partial: "bg-orange-100 text-orange-700",
+  received: "bg-green-100 text-green-700",
+  cancelled: "bg-ink-100 text-ink-500",
+};
+const PO_STATUS_LABEL: Record<POStatus, string> = {
+  draft: "Draft", sent: "Sent", confirmed: "Ordered",
+  partial: "Partial", received: "Received", cancelled: "Cancelled",
+};
+
+type PrimaryTab = "queue" | "pos";
+
 const STATUS_STYLE: Record<string, string> = {
   paid:    "bg-green-50 text-green-700 border-green-200",
   overdue: "bg-red-50 text-red-700 border-red-200",
@@ -113,6 +138,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 export default function OfficePage() {
   const { user } = useAuth();
+  const [primaryTab, setPrimaryTab] = useState<PrimaryTab>("queue");
 
   if (!user) return null;
 
@@ -126,11 +152,178 @@ export default function OfficePage() {
         </p>
         <h1 className="page-title mt-1">Purchasing</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Everything released jobs still need — grouped by supplier.
+          Released jobs still need ordering, and all purchase orders.
         </p>
       </div>
-      <PurchasingContent canOrder={canOrder} />
+
+      <div className="mb-5 flex gap-1 overflow-x-auto">
+        {([
+          { key: "queue" as const, label: "Order Queue" },
+          { key: "pos"   as const, label: "PO Tracker"  },
+        ]).map(t => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setPrimaryTab(t.key)}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+              primaryTab === t.key
+                ? "bg-ink-900 text-white"
+                : "bg-ink-100 text-ink-600 hover:bg-ink-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {primaryTab === "queue" ? (
+        <PurchasingContent canOrder={canOrder} />
+      ) : (
+        <POTrackerView canOrder={canOrder} />
+      )}
     </div>
+  );
+}
+
+// ─── PO Tracker tab ───────────────────────────────────────────────────────────
+
+function POTrackerView({ canOrder }: { canOrder: boolean }) {
+  const [pos, setPOs] = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [poFilter, setPOFilter] = useState<"All" | POStatus>("All");
+  const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [receiveQtys, setReceiveQtys] = useState<Record<string, number>>({});
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<PurchaseOrder[]>("/purchase-orders")
+      .then(d => setPOs(d || []))
+      .catch(() => setError("Couldn't load purchase orders."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleReceivePO = async (po: PurchaseOrder) => {
+    const lines = po.lines.map((line, i) => ({
+      lineId: line.id,
+      qtyReceived: receiveQtys[`${po.id}-${i}`] ?? line.qty,
+    }));
+    try {
+      await api.post(`/purchase-orders/${po.id}/receive`, {
+        lines,
+        receivedDate: new Date().toISOString().split("T")[0],
+        invoiceRef: "",
+      });
+      setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "received" as POStatus } : p));
+    } catch { /* handle error */ }
+    setReceivingId(null);
+  };
+
+  const filtered = poFilter === "All" ? pos : pos.filter(p => p.status === poFilter);
+
+  return (
+    <>
+      {error ? <ErrorBox text={error} /> : null}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(["All", "draft", "confirmed", "partial", "received", "cancelled"] as const).map(s => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setPOFilter(s)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold border transition-all ${
+              poFilter === s
+                ? "bg-ink-900 text-white border-ink-900"
+                : "border-ink-300 text-ink-600 hover:border-ink-400"
+            }`}
+          >
+            {s === "All" ? "All" : PO_STATUS_LABEL[s as POStatus]}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <Empty text="Loading purchase orders…" />
+      ) : filtered.length === 0 ? (
+        <Empty text={poFilter === "All" ? "No purchase orders yet." : `No ${PO_STATUS_LABEL[poFilter as POStatus]?.toLowerCase()} orders.`} />
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(po => (
+            <div key={po.id} className="overflow-hidden rounded-card border border-ink-200 bg-white">
+              <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-semibold text-ink-600">{po.poNumber}</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PO_STATUS_BADGE[po.status]}`}>
+                    {PO_STATUS_LABEL[po.status]}
+                  </span>
+                </div>
+                <div className="shrink-0 text-right text-xs text-ink-500">
+                  <p>{po.supplier}</p>
+                  {po.expectedDate && <p>ETA {po.expectedDate}</p>}
+                </div>
+              </div>
+              <div className="p-4">
+                {po.lines.map((line, i) => (
+                  <div key={line.id || i} className="flex items-center justify-between py-2 text-sm border-b border-ink-100 last:border-0">
+                    <span className="text-ink-700 min-w-0 truncate">{line.description}</span>
+                    <span className="shrink-0 text-ink-500 tabular ml-3">
+                      {line.qtyReceived}/{line.qty} {line.unit}
+                    </span>
+                  </div>
+                ))}
+                {po.notes && <p className="mt-3 text-xs text-ink-500">{po.notes}</p>}
+
+                {canOrder && (po.status === "confirmed" || po.status === "sent" || po.status === "partial") && (
+                  receivingId === po.id ? (
+                    <div className="mt-4 flex flex-col gap-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">Mark received</p>
+                      {po.lines.map((line, i) => (
+                        <div key={line.id || i}>
+                          <p className="mb-1 text-xs font-medium text-ink-700">{line.description}</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-orange"
+                              placeholder={`of ${line.qty} ${line.unit}`}
+                              value={receiveQtys[`${po.id}-${i}`] ?? ""}
+                              onChange={e => setReceiveQtys(prev => ({ ...prev, [`${po.id}-${i}`]: Number(e.target.value) }))}
+                            />
+                            <span className="shrink-0 text-sm text-ink-500">{line.unit}</span>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="flex-1 rounded-xl bg-brand-orange py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
+                          onClick={() => handleReceivePO(po)}
+                        >
+                          Confirm Received
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-xl border border-ink-200 px-4 text-sm font-semibold text-ink-700"
+                          onClick={() => setReceivingId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="mt-3 rounded-lg border border-ink-200 px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50"
+                      onClick={() => setReceivingId(po.id)}
+                    >
+                      Mark as Received
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
