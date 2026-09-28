@@ -266,9 +266,7 @@ export default function DesignWorkspace() {
   const loadDesigners = async () => {
     try {
       const data = await api.get<Employee[]>("/users/employees");
-      setDesigners((data || []).filter((person) =>
-        person.role === "drafter" || person.role === "designer"
-      ));
+      setDesigners(data || []);
     } catch {
       setDesigners([]);
     }
