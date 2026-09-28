@@ -252,7 +252,7 @@ export default function DesignWorkspace() {
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
 
   const canManageDesign = !!user && [
-    "managing_director", "manager", "department_manager", "admin", "office",
+    "managing_director", "manager", "department_manager", "admin", "office", "drafter",
   ].includes(user.role);
   const canDeleteDesign = !!user && [
     "managing_director", "manager", "admin",
