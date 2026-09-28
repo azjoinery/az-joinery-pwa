@@ -37,6 +37,7 @@ export default function AnalyticsPage() {
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dailyOutput, setDailyOutput] = useState<number | null>(null);
   const [weeklyOutput, setWeeklyOutput] = useState<number | null>(null);
   const [performance, setPerformance] = useState<PerformanceRow[]>([]);
@@ -103,6 +104,19 @@ export default function AnalyticsPage() {
       setSubmitError("Couldn't submit this report — it was not saved. Check your connection and try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const deleteIncident = async (id: string) => {
+    if (!window.confirm("Delete this incident report? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/compliance/${id}`);
+      setIncidents((prev) => prev.filter((i) => i.id !== id));
+    } catch {
+      // non-fatal — incident stays in list if delete fails
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -257,9 +271,18 @@ export default function AnalyticsPage() {
                 <div key={inc.id} className="card card-pad">
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-medium text-gray-900 text-sm">{inc.category}</span>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor[inc.priority] || severityColor.Low}`}>
-                      {inc.priority}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor[inc.priority] || severityColor.Low}`}>
+                        {inc.priority}
+                      </span>
+                      <button
+                        onClick={() => deleteIncident(inc.id)}
+                        disabled={deletingId === inc.id}
+                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
+                      >
+                        {deletingId === inc.id ? "…" : "Delete"}
+                      </button>
+                    </div>
                   </div>
                   <p className="page-subtitle">{inc.description}</p>
                 </div>

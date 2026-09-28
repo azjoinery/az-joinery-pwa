@@ -219,6 +219,7 @@ export default function MaterialsPage() {
               transactions={transactions.filter((tx) => dateFromIso(tx.createdAt) >= periodStart)}
               stockById={stockById}
               jobsById={jobsById}
+              onDeleteEntry={(id) => setEntries((prev) => prev.filter((e) => e.id !== id))}
             />
           ) : null}
 
@@ -272,7 +273,7 @@ const CABINET_LABELS: Record<string, string> = {
   cab_special: "Special",
 };
 
-function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById }: {
+function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, onDeleteEntry }: {
   loading: boolean;
   period: "today" | "week";
   setPeriod: (value: "today" | "week") => void;
@@ -285,7 +286,22 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
   transactions: StockTransaction[];
   stockById: Map<string, StockItem>;
   jobsById: Map<string, JobPick>;
+  onDeleteEntry: (id: string) => void;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteEntry = async (id: string) => {
+    if (!window.confirm("Delete this daily log entry? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/entries/${id}`);
+      onDeleteEntry(id);
+    } catch {
+      // non-fatal — entry stays in list if delete fails
+    } finally {
+      setDeletingId(null);
+    }
+  };
   return (
     <>
       <div className="mb-4 flex gap-2">
@@ -346,7 +362,12 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
                       <h3 className="font-semibold text-ink-950">{entry.employeeName || "Worker"}</h3>
                       <p className="mt-0.5 text-sm text-ink-500">{entry.date}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700">{total} cabinets</span>
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-700">{total} cabinets</span>
+                      <button onClick={() => deleteEntry(entry.id)} disabled={deletingId === entry.id} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+                        {deletingId === entry.id ? "…" : "Delete"}
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {Object.entries(entry.counts || {}).filter(([, v]) => Number(v) > 0).map(([key, v]) => (

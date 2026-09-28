@@ -340,6 +340,7 @@ function PipelineTab({ catalog, employees }: { catalog: SalesCatalog; employees:
         employees={employees}
         onBack={() => setSelectedId(null)}
         onUpdated={(u) => setLeads((prev) => prev.map((l) => (l.id === u.id ? u : l)))}
+        onDeleted={(id) => { setLeads((prev) => prev.filter((l) => l.id !== id)); setSelectedId(null); }}
       />
     );
   }
@@ -466,9 +467,9 @@ function PipelineTab({ catalog, employees }: { catalog: SalesCatalog; employees:
 }
 
 function LeadDetail({
-  lead, catalog, employees, onBack, onUpdated,
+  lead, catalog, employees, onBack, onUpdated, onDeleted,
 }: {
-  lead: Lead; catalog: SalesCatalog; employees: Employee[]; onBack: () => void; onUpdated: (l: Lead) => void;
+  lead: Lead; catalog: SalesCatalog; employees: Employee[]; onBack: () => void; onUpdated: (l: Lead) => void; onDeleted: (id: string) => void;
 }) {
   const [currentLead, setCurrentLead] = useState(lead);
   const [form, setForm] = useState({
@@ -487,6 +488,7 @@ function LeadDetail({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [convertError, setConvertError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [fuForm, setFuForm] = useState({ followUpDate: "", followUpType: "Phone", purpose: "" });
@@ -508,6 +510,17 @@ function LeadDetail({
       setFollowUps((all || []).filter((f) => f.leadId === lead.id));
     } catch (err) {
       // non-fatal
+    }
+  };
+
+  const deleteLead = async () => {
+    if (!window.confirm("Delete this lead permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/sales/leads/${lead.id}`);
+      onDeleted(lead.id);
+    } catch {
+      setDeleting(false);
     }
   };
 
@@ -583,7 +596,12 @@ function LeadDetail({
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to pipeline</button>
+      <div className="flex justify-between items-center">
+        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to pipeline</button>
+        <button onClick={deleteLead} disabled={deleting} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+          {deleting ? "Deleting…" : "Delete lead"}
+        </button>
+      </div>
 
       <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">
@@ -796,6 +814,7 @@ function ContactsTab({ catalog, employees }: { catalog: SalesCatalog; employees:
         employees={employees}
         onBack={() => setSelectedId(null)}
         onUpdated={(u) => setContacts((prev) => prev.map((c) => (c.id === u.id ? u : c)))}
+        onDeleted={(id) => { setContacts((prev) => prev.filter((c) => c.id !== id)); setSelectedId(null); }}
       />
     );
   }
@@ -873,9 +892,9 @@ function ContactsTab({ catalog, employees }: { catalog: SalesCatalog; employees:
 }
 
 function ContactDetail({
-  contact, catalog, employees, onBack, onUpdated,
+  contact, catalog, employees, onBack, onUpdated, onDeleted,
 }: {
-  contact: Contact; catalog: SalesCatalog; employees: Employee[]; onBack: () => void; onUpdated: (c: Contact) => void;
+  contact: Contact; catalog: SalesCatalog; employees: Employee[]; onBack: () => void; onUpdated: (c: Contact) => void; onDeleted: (id: string) => void;
 }) {
   const [form, setForm] = useState({
     name: contact.name, contactType: contact.contactType, companyName: contact.companyName || "",
@@ -886,6 +905,7 @@ function ContactDetail({
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const contactTypes = catalog.contactTypes.length ? catalog.contactTypes : ["Homeowner", "Builder", "Architect", "Supplier"];
 
@@ -902,9 +922,25 @@ function ContactDetail({
     }
   };
 
+  const deleteContact = async () => {
+    if (!window.confirm("Delete this contact permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/sales/contacts/${contact.id}`);
+      onDeleted(contact.id);
+    } catch {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to contacts</button>
+      <div className="flex justify-between items-center">
+        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to contacts</button>
+        <button onClick={deleteContact} disabled={deleting} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+          {deleting ? "Deleting…" : "Delete contact"}
+        </button>
+      </div>
       <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
         <input type="text" placeholder="Name" value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -1053,6 +1089,7 @@ function QuotesTab() {
         quote={selected}
         onBack={() => setSelectedId(null)}
         onUpdated={(u) => setQuotes((prev) => prev.map((q) => (q.id === u.id ? u : q)))}
+        onDeleted={(id) => { setQuotes((prev) => prev.filter((q) => q.id !== id)); setSelectedId(null); }}
       />
     );
   }
@@ -1160,9 +1197,21 @@ function QuotesTab() {
   );
 }
 
-function QuoteDetail({ quote, onBack, onUpdated }: { quote: Quote; onBack: () => void; onUpdated: (q: Quote) => void }) {
+function QuoteDetail({ quote, onBack, onUpdated, onDeleted }: { quote: Quote; onBack: () => void; onUpdated: (q: Quote) => void; onDeleted: (id: string) => void }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const deleteQuote = async () => {
+    if (!window.confirm("Delete this quote permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/sales/quotes/${quote.id}`);
+      onDeleted(quote.id);
+    } catch {
+      setDeleting(false);
+    }
+  };
 
   const changeStatus = async (status: string) => {
     setStatusSaving(true);
@@ -1195,7 +1244,12 @@ function QuoteDetail({ quote, onBack, onUpdated }: { quote: Quote; onBack: () =>
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to quotes</button>
+      <div className="flex justify-between items-center">
+        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to quotes</button>
+        <button onClick={deleteQuote} disabled={deleting} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+          {deleting ? "Deleting…" : "Delete quote"}
+        </button>
+      </div>
 
       <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">

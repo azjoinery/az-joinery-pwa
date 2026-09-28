@@ -1227,6 +1227,7 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reversingId, setReversingId] = useState<string | null>(null);
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
 
   const txTypes = catalogs?.transactionTypes || ["receipt", "issue", "return", "adjustment", "damaged", "wastage"];
 
@@ -1284,6 +1285,19 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
     }
   };
 
+  const deleteTx = async (txId: string) => {
+    if (!window.confirm("Hard-delete this transaction? The stock level will be rolled back. This cannot be undone.")) return;
+    setDeletingTxId(txId);
+    try {
+      await api.delete(`/stock/transactions/${txId}`);
+      setTxs((prev) => prev.filter((t) => t.id !== txId));
+    } catch {
+      setSaveError("Couldn't delete this transaction — check your connection and try again.");
+    } finally {
+      setDeletingTxId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
@@ -1332,11 +1346,16 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
               {tx.reason && <p className="text-xs text-gray-500 mt-1">{tx.reason}</p>}
               <div className="flex justify-between items-center mt-1">
                 <span className="text-xs text-gray-400">{tx.createdBy}{tx.jobId ? ` · job ${tx.jobId}` : ""}{tx.reversesTx ? " · reversal" : ""}</span>
-                {!tx.reversesTx && tx.txType !== "reversal" && (
-                  <button onClick={() => reverse(tx.id)} disabled={reversingId === tx.id} className="text-xs text-red-500 hover:text-red-700">
-                    {reversingId === tx.id ? "Reversing..." : "Reverse"}
+                <div className="flex gap-3">
+                  {!tx.reversesTx && tx.txType !== "reversal" && (
+                    <button onClick={() => reverse(tx.id)} disabled={reversingId === tx.id} className="text-xs text-orange-500 hover:text-orange-700">
+                      {reversingId === tx.id ? "Reversing..." : "Reverse"}
+                    </button>
+                  )}
+                  <button onClick={() => deleteTx(tx.id)} disabled={deletingTxId === tx.id} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+                    {deletingTxId === tx.id ? "…" : "Delete"}
                   </button>
-                )}
+                </div>
               </div>
             </div>
           ))}
@@ -1411,6 +1430,7 @@ function OrdersTab() {
         po={selected}
         onBack={() => setSelectedId(null)}
         onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? u : o)))}
+        onDeleted={(id) => { setOrders((prev) => prev.filter((o) => o.id !== id)); setSelectedId(null); }}
       />
     );
   }
@@ -1490,13 +1510,25 @@ function OrdersTab() {
   );
 }
 
-function POrderDetail({ po, onBack, onUpdated }: { po: PurchaseOrder; onBack: () => void; onUpdated: (p: PurchaseOrder) => void }) {
+function POrderDetail({ po, onBack, onUpdated, onDeleted }: { po: PurchaseOrder; onBack: () => void; onUpdated: (p: PurchaseOrder) => void; onDeleted: (id: string) => void }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [showReceive, setShowReceive] = useState(false);
   const [receiveLines, setReceiveLines] = useState<Record<string, number>>({});
   const [receiveSaving, setReceiveSaving] = useState(false);
   const [receiveError, setReceiveError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const deletePO = async () => {
+    if (!window.confirm("Delete this purchase order permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/purchase-orders/${po.id}`);
+      onDeleted(po.id);
+    } catch {
+      setDeleting(false);
+    }
+  };
 
   const changeStatus = async (status: string) => {
     setStatusSaving(true);
@@ -1533,7 +1565,12 @@ function POrderDetail({ po, onBack, onUpdated }: { po: PurchaseOrder; onBack: ()
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to purchase orders</button>
+      <div className="flex justify-between items-center">
+        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to purchase orders</button>
+        <button onClick={deletePO} disabled={deleting} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
+          {deleting ? "Deleting…" : "Delete order"}
+        </button>
+      </div>
 
       <div className="card card-pad">
         <div className="flex justify-between items-start mb-2">
