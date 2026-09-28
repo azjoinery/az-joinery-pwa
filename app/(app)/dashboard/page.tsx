@@ -904,6 +904,38 @@ function FloorLogDashboard() {
   const selectedJob = jobList.find(j => j.id === selectedJobId);
   const hasReleasedMaterials = !!(selectedJobId && selectedJob?.releasedMaterialList?.length);
 
+  const releasedMaterialKey = (dept: "cnc" | "hardware", idx: number) =>
+    `released:${selectedJobId || "general"}:${dept}:${idx}`;
+
+  const isReleasedFallbackId = (stockItemId?: string) =>
+    !!stockItemId && stockItemId.startsWith("released:");
+
+  const findMaterialRow = (stockItemId: string) =>
+    materials.findIndex(
+    (m) => m.stockItemId === stockItemId && (m.jobId || "") === selectedJobId
+  );
+
+  const addReleasedMaterialRow = (
+    stockItemId: string,
+    qty: number,
+    item: { description?: string; category?: string; unit?: string }
+  ) => {
+  const safeQty = Math.max(0, Math.round(qty || 0));
+  if (safeQty <= 0) return;
+
+  setMaterials((prev) => [
+    ...prev,
+    {
+      stockItemId,
+      jobId: selectedJobId,
+      qty: safeQty,
+      wastageQty: 0,
+      notes: `Released material: ${item.description || item.category || "Material"}`,
+    },
+  ]);
+  scheduleSave();
+};
+
 
   return (
     <>
@@ -990,6 +1022,7 @@ function FloorLogDashboard() {
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
               if ((m.jobId || "") !== selectedJobId) return false;
+              if (isReleasedFallbackId(m.stockItemId)) return false;
               const stk = stockList.find(s => s.id === m.stockItemId);
               if (pickDept(stk) !== "cnc") return false;
               return !relCnc.some(r => r.stockItemId && r.stockItemId === m.stockItemId);
@@ -1016,9 +1049,8 @@ function FloorLogDashboard() {
                 <div className="space-y-2">
                   {relCnc.map((item, idx) => {
                     const sid = item.stockItemId || "";
-                    const matIdx = sid
-                      ? materials.findIndex(m => m.stockItemId === sid && (m.jobId || "") === selectedJobId)
-                      : -1;
+                    const rowKey = sid || releasedMaterialKey("cnc", idx);
+                    const matIdx = findMaterialRow(rowKey);
                     const mat = matIdx >= 0 ? materials[matIdx] : null;
                     const stk = sid ? stockList.find(s => s.id === sid) : null;
                     const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
@@ -1038,24 +1070,21 @@ function FloorLogDashboard() {
                         qty={mat?.qty || 0}
                         onMinus={() => { if (matIdx >= 0) bumpMaterial(matIdx, -1); }}
                         onPlus={() => {
-                          if (!sid) return;
-                          if (matIdx >= 0) {
-                            bumpMaterial(matIdx, 1);
+                         if (matIdx >= 0) {
+                           bumpMaterial(matIdx, 1);
                           } else {
-                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: 1, wastageQty: 0 }]);
-                            scheduleSave();
-                          }
-                        }}
+                            addReleasedMaterialRow(rowKey, 1, item);
+                         }
+                      }}
                         onQtyChange={(v) => {
-                          if (matIdx >= 0) {
-                            setMaterialQty(matIdx, v);
-                          } else if (v > 0 && sid) {
-                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: v, wastageQty: 0 }]);
-                            scheduleSave();
+                         if (matIdx >= 0) {
+                           setMaterialQty(matIdx, v);
+                          } else {
+                           addReleasedMaterialRow(rowKey, v, item);
                           }
                         }}
                         showAssigned={false}
-                      />
+                       />
                     );
                   })}
                   {manualCnc.map(({ m, i }) => {
@@ -1108,6 +1137,7 @@ function FloorLogDashboard() {
             .map((m, i) => ({ m, i }))
             .filter(({ m }) => {
               if ((m.jobId || "") !== selectedJobId) return false;
+              if (isReleasedFallbackId(m.stockItemId)) return false;
               const stk = stockList.find(s => s.id === m.stockItemId);
               if (pickDept(stk) !== "hardware") return false;
               return !relHw.some(r => r.stockItemId && r.stockItemId === m.stockItemId);
@@ -1134,9 +1164,8 @@ function FloorLogDashboard() {
                 <div className="space-y-2">
                   {relHw.map((item, idx) => {
                     const sid = item.stockItemId || "";
-                    const matIdx = sid
-                      ? materials.findIndex(m => m.stockItemId === sid && (m.jobId || "") === selectedJobId)
-                      : -1;
+                    const rowKey = sid || releasedMaterialKey("hardware", idx);
+                    const matIdx = findMaterialRow(rowKey);
                     const mat = matIdx >= 0 ? materials[matIdx] : null;
                     const stk = sid ? stockList.find(s => s.id === sid) : null;
                     const low = !!(stk && typeof stk.on_hand_qty === "number" && stk.on_hand_qty <= 3);
@@ -1156,22 +1185,19 @@ function FloorLogDashboard() {
                         qty={mat?.qty || 0}
                         onMinus={() => { if (matIdx >= 0) bumpMaterial(matIdx, -1); }}
                         onPlus={() => {
-                          if (!sid) return;
-                          if (matIdx >= 0) {
-                            bumpMaterial(matIdx, 1);
-                          } else {
-                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: 1, wastageQty: 0 }]);
-                            scheduleSave();
-                          }
-                        }}
+                         if (matIdx >= 0) {
+                         bumpMaterial(matIdx, 1);
+                        } else {
+                          addReleasedMaterialRow(rowKey, 1, item);
+                      }
+                    }}
                         onQtyChange={(v) => {
-                          if (matIdx >= 0) {
-                            setMaterialQty(matIdx, v);
-                          } else if (v > 0 && sid) {
-                            setMaterials(prev => [...prev, { stockItemId: sid, jobId: selectedJobId, qty: v, wastageQty: 0 }]);
-                            scheduleSave();
-                          }
-                        }}
+                         if (matIdx >= 0) {
+                         setMaterialQty(matIdx, v);
+                        } else {
+                         addReleasedMaterialRow(rowKey, v, item);
+                      }
+                    }}
                         showAssigned={false}
                       />
                     );
