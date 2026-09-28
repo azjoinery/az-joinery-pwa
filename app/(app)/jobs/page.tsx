@@ -66,7 +66,7 @@ interface PurchaseOrder {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor"];
+const FLOOR_ROLES = ["cabinet_maker", "installer", "employee", "contractor", "supervisor"];
 const OFFICE_MGMT_ROLES = new Set(["managing_director", "manager", "department_manager", "admin", "office"]);
 const JOB_MANAGE_ROLES = new Set([
   "managing_director", "manager", "department_manager", "admin", "supervisor",
@@ -1395,7 +1395,7 @@ type WorkspaceTab = "office" | "design" | "production";
 const WORKSPACE_TABS: { key: WorkspaceTab; label: string }[] = [
   { key: "office",     label: "Office" },
   { key: "design",     label: "Design" },
-  { key: "production", label: "Production" },
+  { key: "production", label: "Workshop" },
 ];
 
 function NewJobButton() {
@@ -1473,7 +1473,6 @@ export default function JobsPage() {
     );
   }
 
-  if (user.role === "supervisor") return <SupervisorView />;
   if (FLOOR_ROLES.includes(user.role)) return <CabinetmakerView userId={user.id} />;
   return <JobsKanban canManage={JOB_MANAGE_ROLES.has(user.role)} />;
 }

@@ -249,17 +249,15 @@ function POTrackerView({ canOrder }: { canOrder: boolean }) {
         <div className="space-y-3">
           {filtered.map(po => (
             <div key={po.id} className="overflow-hidden rounded-card border border-ink-200 bg-white">
-              <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="border-b border-ink-100 px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs font-semibold text-ink-600">{po.poNumber}</span>
                   <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${PO_STATUS_BADGE[po.status]}`}>
                     {PO_STATUS_LABEL[po.status]}
                   </span>
                 </div>
-                <div className="shrink-0 text-right text-xs text-ink-500">
-                  <p>{po.supplier}</p>
-                  {po.expectedDate && <p>ETA {po.expectedDate}</p>}
-                </div>
+                <p className="mt-1 text-xs text-ink-500">{po.supplier}</p>
+                {po.expectedDate && <p className="text-[11px] text-ink-400">ETA {po.expectedDate}</p>}
               </div>
               <div className="p-4">
                 {po.lines.map((line, i) => (

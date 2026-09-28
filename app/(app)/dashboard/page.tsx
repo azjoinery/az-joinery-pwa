@@ -216,7 +216,7 @@ function ExecutiveOverview() {
       <section className="mb-7">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile icon="jobs" label="Active jobs" value={totals?.activeJobs ?? null} href="/jobs" />
-          <StatTile icon="inventory" label="Needs materials" value={totals?.officeJobs ?? null} href="/jobs" />
+          <StatTile icon="inventory" label="Needs materials" value={totals?.officeJobs ?? null} href="/office" />
           <StatTile icon="wrench" label="In queue" value={totals?.productionQueue ?? null} href="/queue" />
           <StatTile icon="alert" label="Overdue" value={totals?.overdue ?? null} href="/jobs" />
         </div>
