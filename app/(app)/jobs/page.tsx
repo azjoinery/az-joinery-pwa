@@ -54,7 +54,6 @@ interface Job {
   dueDate?: string; stages: Stage[]; bom: BOMItem[];
   activityLog: LogEntry[]; blockReason?: string; blockDetail?: string;
   releasedMaterialList?: ReleaseListItem[];
-  releasedHardwareList?: ReleaseListItem[];
 }
 interface Worker { id: string; name: string; role: string; activeJobs: number; load: WorkerLoad; }
 interface Employee { id: string; name: string; role: string; }
@@ -232,6 +231,43 @@ const MOCK_POS: PurchaseOrder[] = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Map a raw backend job document to the frontend Job shape.
+// Backend and frontend evolved independently; this bridges the gap.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normaliseJob(raw: any): Job {
+  const csMap: Record<string, JobStatus> = {
+    "Ready for Production": "Ready",
+    "In Production":        "In Progress",
+    "Waiting Material":     "Waiting Material",
+    "Blocked":              "Blocked",
+    "Done":                 "Done",
+    "Completed":            "Done",
+  };
+  const priMap: Record<string, Priority> = {
+    "High": "High", "Urgent": "High",
+    "Normal": "Normal", "Medium": "Normal",
+    "Low": "Low",
+  };
+  const rawStatus = raw.currentStatus || raw.status || "";
+  const status: JobStatus = csMap[rawStatus] ?? (raw.blocked ? "Blocked" : "Ready");
+  return {
+    id:          raw.id ?? raw._id ?? "",
+    ref:         raw.jobNum ? `#${raw.jobNum}` : (raw.ref ?? raw.id ?? ""),
+    client:      raw.client ?? "",
+    description: raw.projectName || raw.description || raw.notes || "",
+    status,
+    priority:    priMap[raw.priority ?? ""] ?? "Normal",
+    assignedTo:  raw.assignedTo ?? undefined,
+    dueDate:     raw.dueDate || raw.designDueDate || undefined,
+    stages:      Array.isArray(raw.stages) ? raw.stages : [],
+    bom:         Array.isArray(raw.bom) ? raw.bom : [],
+    activityLog: Array.isArray(raw.activityLog) ? raw.activityLog : [],
+    blockReason: raw.blockReason || raw.blockedReason || undefined,
+    blockDetail: raw.blockDetail || undefined,
+    releasedMaterialList: Array.isArray(raw.releasedMaterialList) ? raw.releasedMaterialList : undefined,
+  };
+}
 
 function activeStage(job: Job) {
   return job.stages.find(s => s.status === "active") ?? job.stages.find(s => s.status === "pending");
@@ -605,21 +641,6 @@ function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMat
           </div>
         )}
 
-        {/* Release hardware list */}
-        {job.releasedHardwareList && job.releasedHardwareList.length > 0 && (
-          <div>
-            <p className="eyebrow mb-2.5">Hardware (Released List)</p>
-            <div className="card overflow-hidden">
-              {job.releasedHardwareList.map((item, i) => (
-                <div key={i} className={`flex items-center justify-between px-4 py-3 ${i < job.releasedHardwareList!.length - 1 ? "border-b border-ink-100" : ""}`}>
-                  <p className="text-sm text-ink-900">{item.description}</p>
-                  <span className="shrink-0 text-sm font-semibold text-ink-700 ml-3">{item.quantity} {item.unit || "pcs"}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Block reason */}
         {(job.status === "Blocked" || job.status === "Waiting Material") && job.blockReason && (
           <div className="alert-danger">
@@ -695,8 +716,12 @@ function CabinetmakerView({ userId }: { userId: string }) {
   useEffect(() => {
     (async () => {
       try {
-        const data = await api.get<Job[]>("/jobs");
-        setJobs(data);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = await api.get<any[]>("/jobs");
+        const released = (raw || [])
+          .filter((j: any) => j.releaseStatus === "Released")
+          .map(normaliseJob);
+        setJobs(released);
       } catch {
         setJobs([]);
       } finally { setLoading(false); }
@@ -708,8 +733,14 @@ function CabinetmakerView({ userId }: { userId: string }) {
     let alive = true;
     const timer = setInterval(async () => {
       try {
-        const data = await api.get<Job[]>("/jobs");
-        if (alive && data) setJobs(data);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = await api.get<any[]>("/jobs");
+        if (alive && raw) {
+          const released = raw
+            .filter((j: any) => j.releaseStatus === "Released")
+            .map(normaliseJob);
+          setJobs(released);
+        }
       } catch { /* skip on network blip */ }
     }, 60_000);
     return () => { alive = false; clearInterval(timer); };
