@@ -347,7 +347,6 @@ function ProductionQueueView({ ready, building, loading, canEdit, advanced, onPr
   );
 }
 
-// ── Inventory ─────────────────────────────────────────────────────────────────
 function InventoryView({ stock, loading }: { stock: StockItem[]; loading: boolean }) {
   const [filter, setFilter] = useState<"all" | "low">("all");
   const lowStock = stock.filter(

@@ -23,7 +23,8 @@
  *   POST  /push/subscribe              → { subscription } (push notification registration)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { format, isPast, parseISO } from "date-fns";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
@@ -377,6 +378,9 @@ function BlockJobSheet({ open, onClose, jobRef, onSubmit }: {
   const [notifyAdmin, setNotifyAdmin] = useState(true);
   const [blockedUntil, setBlockedUntil] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    if (open) { setReason(""); setDetail(""); setNotifySupervisor(true); setNotifyAdmin(true); setBlockedUntil(""); }
+  }, [open]);
 
   const handleSubmit = async () => {
     if (!reason) return;
@@ -447,6 +451,9 @@ function RecordMaterialSheet({ open, onClose, bom, onSubmit }: {
   const [offcutDims, setOffcutDims] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    if (open) { setMaterialId(bom[0]?.id ?? ""); setQty(1); setOffcut(false); setOffcutDims(""); setNotes(""); }
+  }, [open, bom]);
 
   const selected = bom.find(b => b.id === materialId);
 
@@ -691,21 +698,21 @@ function CabinetmakerView({ userId }: { userId: string }) {
         const data = await api.get<Job[]>("/jobs");
         setJobs(data);
       } catch {
-        // Mock data while backend endpoints are being built
-        setJobs(MOCK_JOBS.filter(j => j.assignedTo?.id === "w1"));
+        setJobs([]);
       } finally { setLoading(false); }
     })();
   }, [userId]);
 
   // 60-second silent poll — reflects queue stage advancements in the job badge
   useEffect(() => {
+    let alive = true;
     const timer = setInterval(async () => {
       try {
         const data = await api.get<Job[]>("/jobs");
-        if (data) setJobs(data);
+        if (alive && data) setJobs(data);
       } catch { /* skip on network blip */ }
     }, 60_000);
-    return () => clearInterval(timer);
+    return () => { alive = false; clearInterval(timer); };
   }, []);
 
   const filtered = filter === "All" ? jobs : jobs.filter(j => j.status === filter);
@@ -740,10 +747,10 @@ function CabinetmakerView({ userId }: { userId: string }) {
         notify_supervisor: d.notifySupervisor, notify_admin: d.notifyAdmin,
         blocked_until: d.blockedUntil || null,
       });
-    } catch { /* best effort */ }
-    setJobs(prev => prev.map(j => j.id === selectedJob.id
-      ? { ...j, status: "Blocked", blockReason: d.reason, blockDetail: d.detail } : j
-    ));
+      setJobs(prev => prev.map(j => j.id === selectedJob.id
+        ? { ...j, status: "Blocked", blockReason: d.reason, blockDetail: d.detail } : j
+      ));
+    } catch { /* API not yet implemented — don't update UI on failure */ }
   };
 
   const handleRecordMaterial = async (d: RecordData) => {
@@ -862,6 +869,7 @@ function SupervisorView() {
   const [loading, setLoading] = useState(true);
   const [reassignJob, setReassignJob] = useState<Job | null>(null);
   const [blockJob, setBlockJob] = useState<Job | null>(null);
+  const [recordJob, setRecordJob] = useState<Job | null>(null);
   const [selectedWorker, setSelectedWorker] = useState("");
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -872,21 +880,23 @@ function SupervisorView() {
         const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
         setJobs(j); setWorkers(w);
       } catch {
-        setJobs(MOCK_JOBS); setWorkers(MOCK_WORKERS);
+        setJobs([]); setWorkers([]);
       } finally { setLoading(false); }
     })();
   }, []);
 
   // 60-second silent poll — reflects queue stage advancements in the jobs table
   useEffect(() => {
+    let alive = true;
     const timer = setInterval(async () => {
       try {
         const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
+        if (!alive) return;
         if (j) setJobs(j);
         if (w) setWorkers(w);
       } catch { /* skip on network blip */ }
     }, 60_000);
-    return () => clearInterval(timer);
+    return () => { alive = false; clearInterval(timer); };
   }, []);
 
   const stats = {
@@ -915,11 +925,30 @@ function SupervisorView() {
         notify_supervisor: d.notifySupervisor, notify_admin: d.notifyAdmin,
         blocked_until: d.blockedUntil || null,
       });
-    } catch { /* best effort */ }
-    setJobs(prev => prev.map(j => j.id === blockJob.id
-      ? { ...j, status: "Blocked", blockReason: d.reason } : j
-    ));
+      setJobs(prev => prev.map(j => j.id === blockJob.id
+        ? { ...j, status: "Blocked", blockReason: d.reason } : j
+      ));
+    } catch { /* API not yet implemented — optimistic update skipped */ }
   };
+
+  const handleStartStage = async (job: Job) => {
+    try {
+      await api.patch(`/jobs/${job.id}/start`, {});
+      setJobs(prev => prev.map(j => {
+        if (j.id !== job.id) return j;
+        let activated = false;
+        const stages = j.stages.map(s => {
+          if (s.status === "active") return { ...s, status: "done" as StageStatus };
+          if (!activated && s.status === "pending") { activated = true; return { ...s, status: "active" as StageStatus }; }
+          return s;
+        });
+        const newStatus: JobStatus = stages.every(s => s.status === "done") ? "Done" : "In Progress";
+        return { ...j, status: newStatus, stages };
+      }));
+    } catch { /* API not yet implemented */ }
+  };
+
+  const handleRecordMaterial = (job: Job) => setRecordJob(job);
 
   return (
     <div className="page pb-nav">
@@ -1039,8 +1068,20 @@ function SupervisorView() {
       <JobDetailSheet
         job={detailJob} open={detailOpen} onClose={() => setDetailOpen(false)}
         onBlock={(j) => { setDetailJob(null); setDetailOpen(false); setBlockJob(j); }}
-        onStartStage={() => {}}
-        onRecordMaterial={() => {}}
+        onStartStage={(j) => { setDetailOpen(false); handleStartStage(j); }}
+        onRecordMaterial={(j) => { setDetailOpen(false); handleRecordMaterial(j); }}
+      />
+
+      <RecordMaterialSheet
+        open={!!recordJob} onClose={() => setRecordJob(null)}
+        bom={recordJob?.bom ?? []}
+        onSubmit={async (d) => {
+          if (!recordJob) return;
+          await api.post(`/jobs/${recordJob.id}/materials/record`, {
+            material_id: d.materialId, qty_used: d.qty,
+            offcut: d.offcut, offcut_dims: d.offcutDims, notes: d.notes,
+          }).catch(() => {});
+        }}
       />
     </div>
   );
@@ -1082,10 +1123,10 @@ function OfficeTabContent() {
           api.get<PurchaseOrder[]>("/purchase-orders"),
           api.get<Employee[]>("/users/employees"),
         ]);
-        setJobs(j); setPOs(p);
+        setJobs(j || []); setPOs(p || []);
         setEmployees((emps || []).filter(e => OFFICE_MGMT_ROLES.has(e.role)));
       } catch {
-        setJobs(MOCK_JOBS); setPOs(MOCK_POS);
+        setJobs([]); setPOs([]);
       } finally { setLoading(false); }
     })();
   }, []);
@@ -1114,7 +1155,7 @@ function OfficeTabContent() {
       qtyReceived: receiveQtys[`${po.id}-${i}`] ?? line.qty,
     }));
     try {
-      await api.post(`/purchase-orders/${po.id}/receive`, { lines, receivedDate: "", invoiceRef: "" });
+      await api.post(`/purchase-orders/${po.id}/receive`, { lines, receivedDate: new Date().toISOString().split("T")[0], invoiceRef: "" });
       setPOs(prev => prev.map(p => p.id === po.id ? { ...p, status: "received" as POStatus } : p));
     } catch { /* handle error */ }
     setReceivingId(null);
@@ -1184,7 +1225,7 @@ function OfficeTabContent() {
                 ))}
                 <div className="flex gap-2 mt-1">
                   {!job.bom.some(b => b.poRef) && (
-                    <button className="btn-primary btn-sm" onClick={() => handleCreatePO(job.id, shortage[0]?.id ?? "")}>
+                    <button className="btn-primary btn-sm" onClick={() => handleCreatePO(job.id, shortage[0]?.material ?? "")}>
                       Create PO
                     </button>
                   )}
@@ -1328,13 +1369,13 @@ const WORKSPACE_TABS: { key: WorkspaceTab; label: string }[] = [
 
 function NewJobButton() {
   return (
-    <a
+    <Link
       href="/jobs/new"
       className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-orange-600 active:scale-95 transition-all"
     >
       <IconPlus />
       New Job
-    </a>
+    </Link>
   );
 }
 

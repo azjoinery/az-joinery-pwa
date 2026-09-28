@@ -19,7 +19,7 @@ const EXECUTIVE_ROLES = new Set([
   "office",
 ]);
 
-const DRAFTER_ROLES = new Set(["drafter", "design"]);
+const DRAFTER_ROLES = new Set(["drafter", "designer"]);
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -425,45 +425,6 @@ function execStageLabel(key?: string) {
   return map[key || ""] || "In progress";
 }
 
-function FlowCard({
-  href,
-  icon,
-  title,
-  main,
-  mainLabel,
-  detail,
-}: {
-  href: string;
-  icon: IconName;
-  title: string;
-  main: string;
-  mainLabel: string;
-  detail: string;
-}) {
-  return (
-    <Link href={href} className="card-interactive group card-pad block">
-      <div className="flex items-start justify-between gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand-orange/10 text-brand-orange-dark">
-          <Icon name={icon} size={20} />
-        </span>
-        <Icon
-          name="chevronRight"
-          size={16}
-          className="mt-1 text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
-        />
-      </div>
-      <h3 className="mt-4 text-base">{title}</h3>
-      <div className="mt-3 flex items-end gap-2">
-        <span className="font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">
-          {main}
-        </span>
-        <span className="pb-1 text-xs font-medium text-ink-500">{mainLabel}</span>
-      </div>
-      <p className="mt-1 text-xs text-ink-500">{detail}</p>
-    </Link>
-  );
-}
-
 function StatTile({
   icon,
   label,
@@ -794,9 +755,9 @@ function FloorLogDashboard() {
   const [saveStatus, setSaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const materialsRef = useRef(materials);
-  useEffect(() => {
-    materialsRef.current = materials;
-  }, [materials]);
+  const formRef = useRef({ counts, note, assemblyJobId, assemblyDone });
+  useEffect(() => { materialsRef.current = materials; }, [materials]);
+  useEffect(() => { formRef.current = { counts, note, assemblyJobId, assemblyDone }; }, [counts, note, assemblyJobId, assemblyDone]);
 
   const cabinetTypes = [
     { key: "cab_small",     label: "Small"    },
@@ -876,13 +837,14 @@ function FloorLogDashboard() {
     saveTimerRef.current = setTimeout(async () => {
       try {
         const today = new Date().toISOString().split("T")[0];
+        const { counts: c, note: n, assemblyJobId: aj, assemblyDone: ad } = formRef.current;
         const rows = materialsRef.current
           .filter((m) => m.stockItemId && ((m.qty || 0) > 0 || (m.wastageQty || 0) > 0))
           .map((m) => {
             const job = jobList.find((j) => j.id === m.jobId);
             return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
           });
-        await api.post("/entries", { date: today, counts, note, materials: rows, assemblyJobId, assemblyDone });
+        await api.post("/entries", { date: today, counts: c, note: n, materials: rows, assemblyJobId: aj, assemblyDone: ad });
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus((s) => (s === "saved" ? "" : s)), 1600);
       } catch {

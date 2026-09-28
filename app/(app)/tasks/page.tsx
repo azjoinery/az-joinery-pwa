@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/store/auth";
 import { api } from "@/lib/api/client";
 
@@ -25,6 +25,8 @@ function taskStatusMeta(status?: string): { label: string; className: string } {
       return { label: "Done", className: "bg-green-100 text-green-700" };
     case "blocked":
       return { label: "Blocked", className: "bg-red-100 text-red-700" };
+    case "Overdue":
+      return { label: "Overdue", className: "bg-orange-100 text-orange-700" };
     default:
       return { label: "Open", className: "bg-ink-100 text-ink-600" };
   }
@@ -50,44 +52,71 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "done", label: "Done" },
 ];
 
+const isOpen = (t: Task) => !t.status || t.status === "open" || t.status === "Overdue";
+
+const CAN_CREATE_TASK = new Set(["managing_director", "manager", "department_manager", "admin", "supervisor", "drafter", "designer"]);
+
+interface NewTaskForm { title: string; description: string; priority: "low" | "normal" | "high" | "urgent"; dueDate: string; }
+
 export default function TasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState<NewTaskForm>({ title: "", description: "", priority: "normal", dueDate: "" });
+  const [saving, setSaving] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
     api
       .get<Task[]>("/tasks/mine")
       .then((data) => {
-        if (alive) {
-          setTasks(data || []);
-          setLoading(false);
-        }
+        if (alive) { setTasks(data || []); setLoading(false); }
       })
-      .catch(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, [user?.id]);
 
-  const filtered =
-    filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+  const handleCreate = async () => {
+    if (!form.title.trim()) { titleRef.current?.focus(); return; }
+    setSaving(true);
+    try {
+      const created = await api.post<Task>("/tasks", {
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+        priority: form.priority,
+        dueDate: form.dueDate || undefined,
+        assigneeId: user?.id,
+      });
+      if (created) setTasks(prev => [created, ...prev]);
+      setCreateOpen(false);
+      setForm({ title: "", description: "", priority: "normal", dueDate: "" });
+    } catch { /* show nothing — API might 403 for roles without access */ }
+    finally { setSaving(false); }
+  };
 
-  const openCount = tasks.filter(
-    (t) => !t.status || t.status === "open"
-  ).length;
+  const handleStatusChange = async (task: Task, newStatus: Task["status"]) => {
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+    try { await api.patch(`/tasks/${task.id}`, { status: newStatus }); }
+    catch { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: task.status } : t)); }
+  };
+
+  const filtered = filter === "all" ? tasks : filter === "open"
+    ? tasks.filter(isOpen)
+    : tasks.filter((t) => t.status === filter);
+
+  const openCount = tasks.filter(isOpen).length;
   const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+  const canCreate = !!user && CAN_CREATE_TASK.has(user.role);
 
   return (
     <div className="page pb-28">
       {/* Header */}
       <div className="mb-6 rounded-card bg-ink-950 px-5 py-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brand-orange">
-          Design &amp; Drafting
+          Tasks
         </p>
         <div className="mt-2.5 flex items-end justify-between gap-3">
           <div>
@@ -98,11 +127,22 @@ export default function TasksPage() {
               {openCount} open · {inProgressCount} in progress
             </p>
           </div>
-          {!loading && (
-            <span className="font-heading text-3xl font-bold tabular tracking-tight text-brand-orange">
-              {tasks.length}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {!loading && (
+              <span className="font-heading text-3xl font-bold tabular tracking-tight text-brand-orange">
+                {tasks.length}
+              </span>
+            )}
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="rounded-xl bg-brand-orange px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-orange-dark"
+              >
+                + New task
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -177,7 +217,7 @@ export default function TasksPage() {
                     </span>
                   )}
                 </div>
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                   <span
                     className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusMeta.className}`}
                   >
@@ -195,10 +235,96 @@ export default function TasksPage() {
                       Design
                     </span>
                   )}
+                  {task._taskType !== "design" && !isDone && (
+                    <select
+                      className="ml-auto rounded-lg border border-ink-200 bg-white px-2 py-1 text-[11px] font-medium text-ink-600"
+                      value={task.status || "open"}
+                      onChange={(e) => handleStatusChange(task, e.target.value as Task["status"])}
+                    >
+                      <option value="open">Open</option>
+                      <option value="in_progress">In progress</option>
+                      <option value="done">Done</option>
+                      <option value="blocked">Blocked</option>
+                    </select>
+                  )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Create Task Modal */}
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center" onClick={() => setCreateOpen(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-ink-200 px-5 py-4">
+              <h3 className="font-semibold text-ink-900">New task</h3>
+              <button type="button" onClick={() => setCreateOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 hover:bg-ink-100">
+                ✕
+              </button>
+            </div>
+            <div className="flex flex-col gap-4 p-5">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-ink-600">Title *</label>
+                <input
+                  ref={titleRef}
+                  type="text"
+                  className="w-full rounded-xl border border-ink-200 px-3 py-2.5 text-sm outline-none focus:border-brand-orange"
+                  placeholder="What needs to be done?"
+                  value={form.title}
+                  onChange={(e) => setForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-ink-600">Description</label>
+                <textarea
+                  className="w-full rounded-xl border border-ink-200 px-3 py-2.5 text-sm outline-none focus:border-brand-orange"
+                  rows={2}
+                  placeholder="Optional details…"
+                  value={form.description}
+                  onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-ink-600">Priority</label>
+                  <select
+                    className="w-full rounded-xl border border-ink-200 px-3 py-2.5 text-sm"
+                    value={form.priority}
+                    onChange={(e) => setForm(f => ({ ...f, priority: e.target.value as NewTaskForm["priority"] }))}
+                  >
+                    <option value="low">Low</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-ink-600">Due date</label>
+                  <input
+                    type="date"
+                    className="w-full rounded-xl border border-ink-200 px-3 py-2.5 text-sm"
+                    value={form.dueDate}
+                    onChange={(e) => setForm(f => ({ ...f, dueDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-full rounded-xl bg-brand-orange py-3 text-sm font-semibold text-white disabled:opacity-40 hover:bg-brand-orange-dark"
+                disabled={!form.title.trim() || saving}
+                onClick={handleCreate}
+              >
+                {saving ? "Creating…" : "Create task"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
