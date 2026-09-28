@@ -14,11 +14,14 @@ type StockItem = {
   reorder_point?: number;
 };
 
+type ReleaseListItem = { description: string; quantity: number; unit?: string; stockItemId?: string; };
+
 type JobPick = {
   id: string;
   jobNum?: string;
   client?: string;
   projectName?: string;
+  releasedMaterialList?: ReleaseListItem[];
 };
 
 type StockTransaction = {
@@ -37,6 +40,7 @@ type ManagementTab = "track" | "assign" | "mine";
 type WorkerTab = "assigned" | "used";
 
 const ASSIGN_ROLES = new Set(["supervisor", "admin", "manager", "managing_director"]);
+const CAP_ADJUST_ROLES = new Set(["supervisor", "manager", "managing_director", "admin", "department_manager"]);
 const TRACK_ROLES = new Set([
   "supervisor",
   "admin",
@@ -63,6 +67,7 @@ export default function MaterialsPage() {
   const { user } = useAuth();
   const canAssign = Boolean(user && ASSIGN_ROLES.has(user.role));
   const canTrack = Boolean(user && TRACK_ROLES.has(user.role));
+  const canAdjustCap = Boolean(user && CAP_ADJUST_ROLES.has(user.role));
   const [managementTab, setManagementTab] = useState<ManagementTab>("track");
   const [workerTab, setWorkerTab] = useState<WorkerTab>("assigned");
   const [period, setPeriod] = useState<"today" | "week">("today");
@@ -170,8 +175,13 @@ export default function MaterialsPage() {
       setMine(saved);
       setMessage("Saved. Inventory has been updated.");
       if (canTrack) await load();
-    } catch {
-      setError("Usage was not saved. Please try again.");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      if (detail && typeof detail === "object" && Array.isArray(detail.violations)) {
+        setError("Allocation exceeded:\n• " + detail.violations.join("\n• "));
+      } else {
+        setError("Usage was not saved. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -219,7 +229,17 @@ export default function MaterialsPage() {
               transactions={transactions.filter((tx) => dateFromIso(tx.createdAt) >= periodStart)}
               stockById={stockById}
               jobsById={jobsById}
+              canAdjustCap={canAdjustCap}
               onDeleteEntry={(id) => setEntries((prev) => prev.filter((e) => e.id !== id))}
+              onCapAdjusted={(jobId, stockItemId, newQty) => {
+                setJobs((prev) => prev.map((j) => {
+                  if (j.id !== jobId) return j;
+                  const list = (j.releasedMaterialList || []).map((m) =>
+                    m.stockItemId === stockItemId ? { ...m, quantity: newQty } : m
+                  );
+                  return { ...j, releasedMaterialList: list };
+                }));
+              }}
             />
           ) : null}
 
@@ -286,10 +306,17 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
   transactions: StockTransaction[];
   stockById: Map<string, StockItem>;
   jobsById: Map<string, JobPick>;
+  canAdjustCap: boolean;
   onDeleteEntry: (id: string) => void;
+  onCapAdjusted: (jobId: string, stockItemId: string, newQty: number) => void;
 }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filterJobId, setFilterJobId] = useState<string>("");
+  const [adjusting, setAdjusting] = useState<{ jobId: string; stockItemId: string; currentQty: number; description: string } | null>(null);
+  const [adjustQty, setAdjustQty] = useState("");
+  const [adjustNote, setAdjustNote] = useState("");
+  const [adjustSaving, setAdjustSaving] = useState(false);
+  const [adjustError, setAdjustError] = useState("");
 
   const deleteEntry = async (id: string) => {
     if (!window.confirm("Delete this daily log entry? This cannot be undone.")) return;
@@ -322,6 +349,68 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
     ? assemblyRows.filter((e) => e.jobCounts && Number(e.jobCounts[filterJobId] || 0) > 0)
     : assemblyRows;
 
+  // Per-(jobId, stockItemId) total usage across all entries in the period
+  const usageTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const { row } of rows) {
+      if (!row.jobId || !row.stockItemId) continue;
+      const k = `${row.jobId}__${row.stockItemId}`;
+      map.set(k, (map.get(k) || 0) + Number(row.qty || 0));
+    }
+    return map;
+  }, [rows]);
+
+  // Cap allocation rows: derived from each job's releasedMaterialList for jobs visible in rows
+  const allocationRows = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ jobId: string; stockItemId: string; description: string; cap: number; unit: string; used: number; job: JobPick }> = [];
+    for (const { row } of rows) {
+      if (!row.jobId) continue;
+      const job = jobsById.get(row.jobId);
+      const relList = job?.releasedMaterialList;
+      if (!relList) continue;
+      for (const r of relList) {
+        if (!r.stockItemId) continue;
+        const k = `${row.jobId}__${r.stockItemId}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        result.push({
+          jobId: row.jobId,
+          stockItemId: r.stockItemId,
+          description: r.description,
+          cap: Number(r.quantity),
+          unit: r.unit || "",
+          used: usageTotals.get(k) || 0,
+          job: job!,
+        });
+      }
+    }
+    return result;
+  }, [rows, jobsById, usageTotals]);
+
+  const submitAdjust = async () => {
+    if (!adjusting) return;
+    const newQty = parseFloat(adjustQty);
+    if (!newQty || newQty <= 0 || !adjustNote.trim()) return;
+    setAdjustSaving(true);
+    setAdjustError("");
+    try {
+      await api.patch(`/jobs/${adjusting.jobId}/material-allocation`, {
+        stockItemId: adjusting.stockItemId,
+        newQuantity: newQty,
+        note: adjustNote.trim(),
+      });
+      onCapAdjusted(adjusting.jobId, adjusting.stockItemId, newQty);
+      setAdjusting(null);
+      setAdjustQty("");
+      setAdjustNote("");
+    } catch {
+      setAdjustError("Could not update — check your connection and try again.");
+    } finally {
+      setAdjustSaving(false);
+    }
+  };
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -341,6 +430,73 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
         <Metric label="Low stock" value={lowStock} warning />
         <Metric label="Active jobs" value={activeJobs} />
       </div>
+
+      {/* Allocation caps — only shown when at least one job has a releasedMaterialList */}
+      {allocationRows.length > 0 && (
+        <section className="mb-6">
+          <h2 className="section-title mb-3">Allocation caps</h2>
+          <div className="space-y-3">
+            {(filterJobId ? allocationRows.filter((r) => r.jobId === filterJobId) : allocationRows).map((r) => {
+              const pct = r.cap > 0 ? Math.min(100, Math.round((r.used / r.cap) * 100)) : 0;
+              const over = r.used > r.cap;
+              const near = !over && pct >= 80;
+              const barColor = over ? "bg-red-500" : near ? "bg-amber-400" : "bg-green-500";
+              return (
+                <div key={`${r.jobId}__${r.stockItemId}`} className="rounded-xl border border-ink-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink-950">{r.description}</p>
+                      <p className="mt-0.5 text-xs text-ink-500">{jobLabel(r.job)}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold tabular-nums ${over ? "bg-red-100 text-red-700" : near ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>
+                        {r.used} / {r.cap} {r.unit}
+                      </span>
+                      {canAdjustCap && (
+                        <button
+                          type="button"
+                          onClick={() => { setAdjusting({ jobId: r.jobId, stockItemId: r.stockItemId, currentQty: r.cap, description: r.description }); setAdjustQty(String(r.cap)); setAdjustNote(""); setAdjustError(""); }}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Adjust
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink-100">
+                    <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+                  </div>
+                  {over && <p className="mt-1.5 text-xs font-semibold text-red-600">Over allocation — supervisor review needed.</p>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Adjust allocation inline modal */}
+          {adjusting && (
+            <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-blue-900">Adjust allocation — {adjusting.description}</p>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-blue-700">New quantity</label>
+                  <input type="number" min={0} value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-blue-700">Reason / note (required)</label>
+                <textarea value={adjustNote} onChange={(e) => setAdjustNote(e.target.value)} rows={2} className="mt-1 w-full rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm resize-none" placeholder="e.g. Extra sheet needed for panel rework" />
+              </div>
+              {adjustError && <p className="text-xs text-red-600">{adjustError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={submitAdjust} disabled={adjustSaving || !adjustQty || !adjustNote.trim()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                  {adjustSaving ? "Saving…" : "Save adjustment"}
+                </button>
+                <button type="button" onClick={() => setAdjusting(null)} className="rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700">Cancel</button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="mb-6">
         <h2 className="section-title mb-3">Material usage</h2>
