@@ -289,6 +289,7 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
   onDeleteEntry: (id: string) => void;
 }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [filterJobId, setFilterJobId] = useState<string>("");
 
   const deleteEntry = async (id: string) => {
     if (!window.confirm("Delete this daily log entry? This cannot be undone.")) return;
@@ -302,11 +303,36 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
       setDeletingId(null);
     }
   };
+
+  const jobOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const options: Array<{ id: string; label: string }> = [];
+    for (const { row } of rows) {
+      if (row.jobId && !seen.has(row.jobId)) {
+        seen.add(row.jobId);
+        const job = jobsById.get(row.jobId);
+        options.push({ id: row.jobId, label: job ? jobLabel(job) : row.jobId });
+      }
+    }
+    return options;
+  }, [rows, jobsById]);
+
+  const filteredRows = filterJobId ? rows.filter(({ row }) => row.jobId === filterJobId) : rows;
+  const filteredAssembly = filterJobId
+    ? assemblyRows.filter((e) => e.jobCounts && Number(e.jobCounts[filterJobId] || 0) > 0)
+    : assemblyRows;
+
   return (
     <>
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setPeriod("today")} className={`rounded-full px-4 py-2 text-sm font-semibold ${period === "today" ? "bg-brand-orange text-white" : "bg-white text-ink-600"}`}>Today</button>
         <button type="button" onClick={() => setPeriod("week")} className={`rounded-full px-4 py-2 text-sm font-semibold ${period === "week" ? "bg-brand-orange text-white" : "bg-white text-ink-600"}`}>This week</button>
+        {jobOptions.length > 0 && (
+          <select value={filterJobId} onChange={(e) => setFilterJobId(e.target.value)} className="ml-auto rounded-full border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700">
+            <option value="">All jobs</option>
+            {jobOptions.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        )}
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -318,9 +344,9 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
 
       <section className="mb-6">
         <h2 className="section-title mb-3">Material usage</h2>
-        {loading ? <Empty text="Loading materials…" /> : rows.length === 0 ? <Empty text="No material activity for this period." /> : (
+        {loading ? <Empty text="Loading materials…" /> : filteredRows.length === 0 ? <Empty text="No material activity for this period." /> : (
           <div className="space-y-3">
-            {rows.map(({ entry, row }, index) => {
+            {filteredRows.map(({ entry, row }, index) => {
               const item = stockById.get(row.stockItemId);
               const assigned = Number(row.assignedQty || 0);
               const used = Number(row.qty || 0);
@@ -351,9 +377,9 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
 
       <section className="mb-6">
         <h2 className="section-title mb-3">Assembly output</h2>
-        {loading ? <Empty text="Loading assembly data…" /> : assemblyRows.length === 0 ? <Empty text="No assembly recorded for this period." /> : (
+        {loading ? <Empty text="Loading assembly data…" /> : filteredAssembly.length === 0 ? <Empty text="No assembly recorded for this period." /> : (
           <div className="space-y-3">
-            {assemblyRows.map((entry) => {
+            {filteredAssembly.map((entry) => {
               const total = Object.values(entry.counts || {}).reduce((s, v) => s + Number(v), 0);
               return (
                 <div key={entry.id} className="rounded-xl border border-ink-200 bg-white p-4">

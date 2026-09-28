@@ -160,10 +160,7 @@ export default function ProductionPage() {
   // Visual feedback when a stage was auto-advanced: jobId → new stage name
   const [advanced, setAdvanced] = useState<Record<string, string>>({});
 
-  // Executive-only data
-  const [entries, setEntries] = useState<DailyEntry[]>([]);
-  const [stock, setStock] = useState<StockItem[]>([]);
-  const [jobs, setJobs] = useState<JobPick[]>([]);
+  // Reserved for future executive-tab data (not yet rendered)
 
   // Keep a ref so autoAdvanceJob can call setProgress without stale closure issues
   const progressRef = useRef<Record<string, Progress>>({});
@@ -197,26 +194,12 @@ export default function ProductionPage() {
     setLoading(true);
     setError("");
     try {
-      const base = Promise.all([
+      const [q, prog] = await Promise.all([
         api.get<{ count: number; jobs: QueueJob[] }>("/pipeline/production-queue"),
         api.get<Record<string, Progress>>("/jobs/progress"),
       ]);
-      const exec = isExecutive
-        ? Promise.all([
-            api.get<DailyEntry[]>("/entries"),
-            api.get<StockItem[]>("/stock/items?active=true"),
-            api.get<JobPick[]>("/jobs"),
-          ])
-        : Promise.resolve<[DailyEntry[], StockItem[], JobPick[]]>([[], [], []]);
-
-      const [[q, prog], [entryRows, stockRows, jobRows]] = await Promise.all([base, exec]);
       setQueue(q?.jobs || []);
       setProgress(prog || {});
-      if (isExecutive) {
-        setEntries(entryRows || []);
-        setStock(stockRows || []);
-        setJobs(jobRows || []);
-      }
 
       // Auto-advance stages for any job that now meets a threshold.
       // This is the "queue detects completion" step — no manual action needed.
@@ -229,7 +212,7 @@ export default function ProductionPage() {
     } finally {
       setLoading(false);
     }
-  }, [isExecutive, autoAdvanceJob]);
+  }, [autoAdvanceJob]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -663,8 +646,14 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
           Assigned-materials reconciliation unlocks when the job reaches 100%.
         </p>
       ) : (
-        <div className="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-center text-xs font-semibold text-green-700">
-          Complete — CNC {fmt(p.cnc_done)}/{p.cnc_target}, Hardware {fmt(p.hw_done)}/{p.hw_target}, Assembly done.
+        <div className="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-700">
+          <div className="text-center">Complete — CNC {fmt(p.cnc_done)}/{p.cnc_target}, Hardware {fmt(p.hw_done)}/{p.hw_target}, Assembly done.</div>
+          <a
+            href="/invoices"
+            className="mt-2 flex items-center justify-center gap-1 rounded-lg border border-green-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-green-800 hover:bg-green-50"
+          >
+            Invoice this job →
+          </a>
         </div>
       )}
     </div>
