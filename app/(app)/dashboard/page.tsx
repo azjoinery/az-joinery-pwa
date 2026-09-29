@@ -1493,7 +1493,7 @@ function FloorLogDashboard() {
             <span>{message}</span>
           </div>
         )}
-        </>}
+        </>)}
 
         {dashTab === "history" && (
           historyLoading ? (
