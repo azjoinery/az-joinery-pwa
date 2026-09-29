@@ -276,10 +276,17 @@ export default function TeamPage() {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-gray-900">{u.name}</span>
                           {u.id === me?.id && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">You</span>}
                           {!u.active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Inactive</span>}
+                          {(() => {
+                            if (!u.licenceExpiry) return null;
+                            const days = Math.ceil((new Date(u.licenceExpiry).getTime() - Date.now()) / 86400000);
+                            if (days < 0) return <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Licence expired</span>;
+                            if (days <= 60) return <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Lic. exp. {days}d</span>;
+                            return null;
+                          })()}
                         </div>
                         <p className="text-sm text-gray-500 truncate">{u.email}</p>
                       </div>
@@ -348,6 +355,7 @@ function UserDetail({
   const [address, setAddress] = useState(targetUser.address || "");
   const [photoUrl, setPhotoUrl] = useState(targetUser.photoUrl || "");
   const [licenceUrl, setLicenceUrl] = useState(targetUser.licenceUrl || "");
+  const [licenceExpiry, setLicenceExpiry] = useState(targetUser.licenceExpiry || "");
   const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -377,6 +385,7 @@ function UserDetail({
       if (newPassword.trim().length >= 6) body.password = newPassword;
       if (photoUrl !== targetUser.photoUrl) body.photoUrl = photoUrl;
       if (licenceUrl !== targetUser.licenceUrl) body.licenceUrl = licenceUrl;
+      if (licenceExpiry !== (targetUser.licenceExpiry || "")) body.licenceExpiry = licenceExpiry || null;
       const updated = await api.patch<User>(`/users/${targetUser.id}`, body);
       onUpdated(updated);
       setNewPassword("");
@@ -509,6 +518,13 @@ function UserDetail({
                 <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload(setLicenceUrl)} />
               </label>
             )}
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500">Licence expiry date</label>
+            <input type="date" value={licenceExpiry}
+              onChange={(e) => setLicenceExpiry(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
           </div>
 
           <div>

@@ -25,6 +25,7 @@ export interface User {
   address?: string;
   photoUrl?: string;
   licenceUrl?: string;
+  licenceExpiry?: string;
   pinSet?: boolean;
 }
 
