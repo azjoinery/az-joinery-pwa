@@ -13,7 +13,11 @@ interface QHSIncident {
 }
 
 interface ProductionSeries {
+  period: string;
+  series: { date: string; value: number }[];
+  totals: Record<string, number>;
   grand: number;
+  activeWorkers: number;
 }
 
 interface PerformanceRow {
@@ -38,8 +42,7 @@ export default function AnalyticsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [dailyOutput, setDailyOutput] = useState<number | null>(null);
-  const [weeklyOutput, setWeeklyOutput] = useState<number | null>(null);
+  const [prodData, setProdData] = useState<ProductionSeries | null>(null);
   const [performance, setPerformance] = useState<PerformanceRow[]>([]);
 
   useEffect(() => {
@@ -61,12 +64,8 @@ export default function AnalyticsPage() {
 
   const loadProductionKpis = async () => {
     try {
-      const [daily, weekly] = await Promise.all([
-        api.get<ProductionSeries>("/analytics/production?period=daily"),
-        api.get<ProductionSeries>("/analytics/production?period=weekly"),
-      ]);
-      setDailyOutput(daily.grand);
-      setWeeklyOutput(weekly.grand);
+      const data = await api.get<ProductionSeries>("/analytics/production?period=weekly");
+      setProdData(data);
     } catch (err) {
       // leave as null -> UI shows "--" rather than a fabricated number
     }
@@ -131,13 +130,19 @@ export default function AnalyticsPage() {
     <div className="page space-y-4">
       <h1 className="page-title">Analytics &amp; Compliance</h1>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-          <div className="text-sm text-blue-600">Daily Output</div>
-          <div className="text-3xl font-bold text-blue-900">{dailyOutput ?? "--"}</div>
+          <div className="text-sm text-blue-600">Today</div>
+          <div className="text-3xl font-bold text-blue-900">
+            {prodData?.series?.length ? prodData.series[prodData.series.length - 1].value : "--"}
+          </div>
+        </div>
+        <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+          <div className="text-sm text-green-600">This Week</div>
+          <div className="text-3xl font-bold text-green-900">{prodData?.grand ?? "--"}</div>
         </div>
         <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-          <div className="text-sm text-yellow-600">Open Incidents</div>
+          <div className="text-sm text-yellow-600">Incidents</div>
           <div className="text-3xl font-bold text-yellow-900">
             {incidents.filter((i) => i.status !== "Resolved").length}
           </div>
@@ -168,19 +173,34 @@ export default function AnalyticsPage() {
       {tab === "kpi" && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <div className="text-sm text-green-600">Weekly Output</div>
-              <div className="text-2xl font-bold text-green-900">{weeklyOutput ?? "--"}</div>
-            </div>
             <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <div className="text-sm text-purple-600">Avg per Day</div>
-              <div className="text-2xl font-bold text-purple-900">
-                {weeklyOutput != null ? Math.round(weeklyOutput / 7) : "--"}
+              <div className="text-sm text-purple-600">Active Workers</div>
+              <div className="text-2xl font-bold text-purple-900">{prodData?.activeWorkers ?? "--"}</div>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+              <div className="text-sm text-orange-600">Avg / Day</div>
+              <div className="text-2xl font-bold text-orange-900">
+                {prodData?.grand != null ? Math.round(prodData.grand / 7) : "--"}
               </div>
             </div>
           </div>
-          <div className="bg-white p-6 rounded-lg border border-gray-200 text-center text-gray-500">
-            Full production charts coming in Phase 7 — the numbers above are real (from daily logs), the chart itself isn't built yet
+
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <h3 className="mb-3 text-sm font-semibold text-gray-700">Units built — last 7 days</h3>
+            {prodData?.series ? (
+              <ProductionBarChart series={prodData.series} />
+            ) : (
+              <div className="flex h-28 items-center justify-center text-sm text-gray-400">Loading…</div>
+            )}
+          </div>
+
+          <div className="bg-white p-4 rounded-lg border border-gray-200">
+            <h3 className="mb-3 text-sm font-semibold text-gray-700">By cabinet type — this week</h3>
+            {prodData?.totals ? (
+              <TypeBreakdown totals={prodData.totals} />
+            ) : (
+              <div className="flex h-20 items-center justify-center text-sm text-gray-400">Loading…</div>
+            )}
           </div>
         </div>
       )}
@@ -291,6 +311,80 @@ export default function AnalyticsPage() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ProductionBarChart({ series }: { series: { date: string; value: number }[] }) {
+  const max = Math.max(...series.map((s) => s.value), 1);
+  const W = 280, H = 110, PADT = 20, PADB = 24, PADL = 4, PADR = 4;
+  const chartW = W - PADL - PADR;
+  const chartH = H - PADT - PADB;
+  const barW = chartW / series.length;
+  const BAR_W = barW * 0.55;
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" aria-hidden="true">
+      {series.map((d, i) => {
+        const barH = (d.value / max) * chartH;
+        const x = PADL + i * barW + (barW - BAR_W) / 2;
+        const y = PADT + chartH - barH;
+        const label = new Date(d.date + "T12:00:00").toLocaleDateString("en-AU", { weekday: "short" });
+        const isToday = d.date === today;
+        return (
+          <g key={d.date}>
+            {barH > 0 && (
+              <rect x={x} y={y} width={BAR_W} height={barH} rx="3"
+                fill={isToday ? "#ea580c" : "#fed7aa"} />
+            )}
+            {d.value > 0 && (
+              <text x={x + BAR_W / 2} y={y - 3} textAnchor="middle"
+                fontSize="8" fontWeight="600" fill={isToday ? "#ea580c" : "#9a3412"}>
+                {d.value}
+              </text>
+            )}
+            <text x={x + BAR_W / 2} y={H - 6} textAnchor="middle"
+              fontSize="8" fill={isToday ? "#ea580c" : "#9ca3af"}
+              fontWeight={isToday ? "700" : "400"}>
+              {label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+const CAB_LABELS: Record<string, string> = {
+  cab_small: "Small", cab_tall: "Tall", cab_corner: "Corner",
+  cab_drawer: "Drawer", cab_special: "Special", cab_kickbase: "Kickbase",
+};
+
+function TypeBreakdown({ totals }: { totals: Record<string, number> }) {
+  const items = Object.entries(totals)
+    .filter(([, v]) => v > 0)
+    .sort(([, a], [, b]) => b - a);
+  const max = Math.max(...items.map(([, v]) => v), 1);
+
+  if (items.length === 0) {
+    return <p className="py-4 text-center text-sm text-gray-400">No cabinet types logged this week</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.map(([k, v]) => (
+        <div key={k} className="flex items-center gap-3">
+          <span className="w-20 shrink-0 text-xs text-gray-600">
+            {CAB_LABELS[k] || k.replace("cab_", "")}
+          </span>
+          <div className="flex-1 h-5 overflow-hidden rounded bg-gray-100">
+            <div className="h-full rounded bg-orange-400 transition-all"
+              style={{ width: `${(v / max) * 100}%` }} />
+          </div>
+          <span className="w-8 text-right text-xs font-semibold text-gray-900">{v}</span>
+        </div>
+      ))}
     </div>
   );
 }
