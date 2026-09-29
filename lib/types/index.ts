@@ -21,6 +21,11 @@ export interface User {
   createdAt?: string;
   permissionMatrix?: Record<string, Record<string, boolean>>;
   permissions?: string[];
+  phone?: string;
+  address?: string;
+  photoUrl?: string;
+  licenceUrl?: string;
+  pinSet?: boolean;
 }
 
 export interface LoginPayload {
