@@ -763,6 +763,9 @@ function FloorLogDashboard() {
   useEffect(() => { materialsRef.current = materials; }, [materials]);
   useEffect(() => { formRef.current = { counts, note, assemblyJobId, assemblyDone }; }, [counts, note, assemblyJobId, assemblyDone]);
 
+  const [dashTab, setDashTab] = useState<"today" | "history">("today");
+  const [historyEntries, setHistoryEntries] = useState<DailyEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const cabinetTypes = [
     { key: "cab_small",     label: "Small"    },
@@ -797,6 +800,23 @@ function FloorLogDashboard() {
       console.log("No entry yet for today");
     }
   };
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await api.get<DailyEntry[]>("/entries");
+      setHistoryEntries(data || []);
+    } catch {
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (dashTab === "history" && historyEntries.length === 0) loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashTab]);
 
   const bumpMaterial = (rowIdx: number, delta: 1 | -1) => {
     setMaterials((prev) => {
@@ -1012,6 +1032,20 @@ const changeReleasedMaterialQty = (
 
         {/* Compact header */}
         <FloorHeader name={firstName} total={assemblyTotal} />
+
+        {/* ── Tab strip ── */}
+        <div className="mb-4 flex gap-1 rounded-xl border border-ink-200 bg-white p-1">
+          <button type="button" onClick={() => setDashTab("today")}
+            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+              dashTab === "today" ? "bg-brand-orange text-white" : "text-ink-500 hover:text-ink-800"
+            }`}>Today</button>
+          <button type="button" onClick={() => setDashTab("history")}
+            className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+              dashTab === "history" ? "bg-brand-orange text-white" : "text-ink-500 hover:text-ink-800"
+            }`}>History</button>
+        </div>
+
+        {dashTab === "today" && (<>
 
         {/* ── Job selector ── */}
         <div className="mb-4 rounded-xl border border-ink-200 bg-white p-4">
@@ -1459,9 +1493,51 @@ const changeReleasedMaterialQty = (
             <span>{message}</span>
           </div>
         )}
+        </>}
+
+        {dashTab === "history" && (
+          historyLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-orange border-t-transparent" />
+            </div>
+          ) : historyEntries.length === 0 ? (
+            <div className="mt-8 rounded-xl border border-dashed border-ink-200 p-8 text-center text-sm text-ink-400">
+              No previous entries yet.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {historyEntries.map((entry) => {
+                const total = Object.values(entry.counts || {}).reduce((s, n) => s + n, 0);
+                const matCount = (entry.materials || []).reduce((s, m) => s + m.qty, 0);
+                return (
+                  <div key={entry.id} className="rounded-xl border border-ink-200 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="font-semibold text-ink-900">
+                        {new Date(entry.date + "T00:00:00").toLocaleDateString("en-AU", {
+                          weekday: "short", day: "numeric", month: "short",
+                        })}
+                      </span>
+                      <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-700">
+                        {total} units
+                      </span>
+                    </div>
+                    {Object.entries(entry.counts || {}).filter(([, v]) => v > 0).map(([k, v]) => (
+                      <span key={k} className="mr-1 rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-700">
+                        {k.replace("cab_", "").replace(/_/g, " ")} × {v}
+                      </span>
+                    ))}
+                    {matCount > 0 && <p className="mt-1 text-xs text-ink-500">{matCount} material units used</p>}
+                    {entry.note && <p className="mt-2 text-sm italic text-ink-600">"{entry.note}"</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
       </div>
 
       {/* ── Fixed submit bar ── */}
+      {dashTab === "today" && (
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-ink-100 bg-white/95 px-4 pb-6 pt-3 backdrop-blur-sm">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           {/* Running tally */}
@@ -1487,6 +1563,7 @@ const changeReleasedMaterialQty = (
           CNC and Hardware above are already saved on each tap.
         </p>
       </div>
+      )}
 
       {/* Material picker modal */}
       {pickerOpen && (
