@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 
@@ -178,7 +178,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function InventoryPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<"stock" | "offcuts" | "transactions" | "orders" | "suppliers">("stock");
+  const [tab, setTab] = useState<"stock" | "offcuts" | "log" | "transactions" | "orders" | "suppliers">("stock");
   const [catalogs, setCatalogs] = useState<Catalogs | null>(null);
   const [kpis, setKpis] = useState<StockKpis | null>(null);
 
@@ -288,7 +288,7 @@ export default function InventoryPage() {
         <div className="flex items-center gap-2">
           <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Workshop</span>
           <div className="flex gap-2 overflow-x-auto">
-            {(["stock", "offcuts"] as const).map((t) => (
+            {(["stock", "offcuts", "log"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -323,6 +323,7 @@ export default function InventoryPage() {
 
       {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} />}
       {tab === "offcuts" && <OffcutsTab catalogs={catalogs} />}
+      {tab === "log" && <LogTab />}
       {tab === "transactions" && withOfficeTabs && <TransactionsTab catalogs={catalogs} />}
       {tab === "orders" && withOfficeTabs && <OrdersTab />}
       {tab === "suppliers" && withOfficeTabs && <SuppliersTab />}
@@ -1689,6 +1690,250 @@ function SuppliersTab() {
                 <p className="text-xs text-gray-400 mt-1">{s.categories.join(", ")}</p>
               )}
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Log ----
+
+interface StockTxLog {
+  id: string;
+  itemId: string;
+  itemName?: string;
+  txType: string;
+  qty: number;
+  unit?: string;
+  jobId?: string;
+  reason?: string;
+  notes?: string;
+  userName?: string;
+  createdAt: string;
+}
+
+interface JobLiteLog {
+  id: string;
+  jobNum?: string;
+  client?: string;
+  projectName?: string;
+}
+
+type FilterKind = "all" | "issue" | "wastage" | "receipt" | "return" | "adjustment";
+
+const KIND_CHIPS: { id: FilterKind; label: string; match: (t: string) => boolean }[] = [
+  { id: "all",        label: "All",      match: () => true },
+  { id: "issue",      label: "Used",     match: (t) => t === "issue" },
+  { id: "wastage",    label: "Wastage",  match: (t) => t === "wastage" || t === "damaged" || t === "written_off" },
+  { id: "receipt",    label: "Received", match: (t) => t === "receipt" },
+  { id: "return",     label: "Returns",  match: (t) => t === "return" },
+  { id: "adjustment", label: "Adjust",   match: (t) => t === "adjustment" || t === "reversal" || t === "transferred" },
+];
+
+function logQtySign(txType: string, qty: number): { sign: string; cls: string } {
+  const q = Math.abs(qty);
+  const positive = ["receipt", "return", "offcut_in"];
+  const negative = ["issue", "wastage", "damaged", "offcut_out", "transferred", "written_off"];
+  if (positive.includes(txType)) return { sign: `+${q}`, cls: "text-green-700" };
+  if (negative.includes(txType)) return { sign: `−${q}`, cls: "text-red-700" };
+  return { sign: `${qty}`, cls: "text-gray-600" };
+}
+
+function logTxTypeLabel(txType: string): string {
+  const map: Record<string, string> = {
+    issue: "used", receipt: "received", wastage: "wastage", damaged: "damaged",
+    return: "returned", adjustment: "adjusted", reversal: "reversed",
+    offcut_in: "offcut in", offcut_out: "offcut out", transferred: "transferred", written_off: "written off",
+  };
+  return map[txType] || txType;
+}
+
+function logBusinessDay(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+function logTimeOfDay(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: false });
+  } catch {
+    return "";
+  }
+}
+
+function LogTab() {
+  const { user } = useAuth();
+  const [txs, setTxs] = useState<StockTxLog[]>([]);
+  const [jobs, setJobs] = useState<JobLiteLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<FilterKind>("all");
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [tx, jb] = await Promise.all([
+        api.get<StockTxLog[]>("/stock/transactions?limit=500").catch(() => null),
+        api.get<JobLiteLog[]>("/jobs").catch(() => []),
+      ]);
+      if (tx === null) throw new Error("Couldn't load history — check your connection.");
+      setTxs(tx || []);
+      setJobs(jb || []);
+    } catch (err: any) {
+      setError(err?.message || "Couldn't load history.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const jobById = (id?: string) => (id ? jobs.find((j) => j.id === id) : undefined);
+
+  const filtered = useMemo(() => {
+    const chip = KIND_CHIPS.find((c) => c.id === kind)!;
+    const needle = q.trim().toLowerCase();
+    return txs.filter((t) => {
+      if (!chip.match(t.txType)) return false;
+      if (!needle) return true;
+      const job = jobById(t.jobId);
+      const hay = [
+        t.itemName, t.txType, t.notes, t.reason, t.userName,
+        job?.jobNum, job?.client, job?.projectName,
+      ].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(needle);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txs, kind, q, jobs]);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, StockTxLog[]>();
+    for (const t of filtered) {
+      const day = logBusinessDay(t.createdAt);
+      const arr = map.get(day) || [];
+      arr.push(t);
+      map.set(day, arr);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => (a[1][0]?.createdAt < b[1][0]?.createdAt ? 1 : -1));
+  }, [filtered]);
+
+  return (
+    <div className="space-y-4">
+      {/* Search */}
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-4-4" />
+        </svg>
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search material, job, person, note…"
+          className="flex-1 border-0 bg-transparent px-1 py-1 text-[15px] outline-none placeholder:text-gray-400"
+        />
+        {q && (
+          <button type="button" onClick={() => setQ("")}
+            className="rounded-md px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100">
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Kind chips */}
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {KIND_CHIPS.map((c) => (
+          <button key={c.id} type="button" onClick={() => setKind(c.id)}
+            className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              kind === c.id
+                ? "border-gray-900 bg-gray-900 text-white"
+                : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+            }`}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-16 animate-pulse rounded-lg border border-gray-100 bg-gray-50" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="text-sm font-medium text-red-800">{error}</div>
+          <button type="button" onClick={load}
+            className="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      ) : txs.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">Nothing logged yet.</p>
+          <p className="mt-1 text-xs text-gray-400">Counter taps and stock movements appear here.</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-200 p-8 text-center">
+          <p className="text-sm text-gray-500">No entries match this search.</p>
+          <button type="button" onClick={() => { setQ(""); setKind("all"); }}
+            className="mt-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-gray-400">
+            Clear filters
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.map(([day, entries]) => (
+            <section key={day}>
+              <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {day} · {entries.length} {entries.length === 1 ? "entry" : "entries"}
+              </h2>
+              <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                {entries.map((t, i) => {
+                  const job = jobById(t.jobId);
+                  const qs = logQtySign(t.txType, t.qty || 0);
+                  return (
+                    <div key={t.id || i}
+                      className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-xs font-semibold tabular-nums text-gray-500">
+                            {logTimeOfDay(t.createdAt)}
+                          </span>
+                          <span className="truncate text-sm font-semibold text-gray-900">
+                            {t.itemName || "Item"}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-gray-500">
+                          {[
+                            logTxTypeLabel(t.txType),
+                            job ? `${job.jobNum || ""}${job.client ? ` · ${job.client}` : ""}`.trim() : null,
+                            t.userName ? `by ${t.userName}` : null,
+                            t.notes || t.reason || null,
+                          ].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                      <div className={`text-sm font-bold tabular-nums ${qs.cls}`}>
+                        {qs.sign} {t.unit || ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           ))}
         </div>
       )}
