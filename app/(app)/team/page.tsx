@@ -266,17 +266,24 @@ export default function TeamPage() {
                     <button
                       key={u.id}
                       onClick={() => setSelectedUserId(u.id)}
-                      className="w-full text-left bg-white p-4 rounded-lg border border-gray-200 hover:border-orange-300 flex justify-between items-center"
+                      className="w-full text-left bg-white p-3 rounded-lg border border-gray-200 hover:border-orange-300 flex items-center gap-3"
                     >
-                      <div>
+                      {u.photoUrl ? (
+                        <img src={u.photoUrl} alt={u.name} className="h-10 w-10 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center text-sm font-semibold text-orange-700 shrink-0">
+                          {u.name.split(" ").slice(0, 2).map((p: string) => p[0]).join("").toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-gray-900">{u.name}</span>
                           {u.id === me?.id && <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">You</span>}
                           {!u.active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Inactive</span>}
                         </div>
-                        <p className="text-sm text-gray-500">{u.email}</p>
+                        <p className="text-sm text-gray-500 truncate">{u.email}</p>
                       </div>
-                      <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-medium">
+                      <span className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-medium shrink-0">
                         {u.role.replace("_", " ")}
                       </span>
                     </button>

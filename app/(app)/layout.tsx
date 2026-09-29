@@ -150,9 +150,13 @@ export default function ProtectedLayout({
         {/* User + sign out */}
         <div className="border-t border-white/[0.07] p-3">
           <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white">
-              {initials}
-            </div>
+            {user.photoUrl ? (
+              <img src={user.photoUrl} alt={user.name} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+            ) : (
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white">
+                {initials}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium text-white">
                 {user.name}
@@ -202,9 +206,13 @@ export default function ProtectedLayout({
               <span className="hidden rounded-full bg-ink-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-600 sm:inline-block">
                 {roleLabel}
               </span>
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white lg:hidden">
-                {initials}
-              </div>
+              {user.photoUrl ? (
+                <img src={user.photoUrl} alt={user.name} className="h-9 w-9 rounded-full object-cover lg:hidden" />
+              ) : (
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-brand-orange text-[13px] font-semibold text-white lg:hidden">
+                  {initials}
+                </div>
+              )}
             </div>
           </div>
         </header>
