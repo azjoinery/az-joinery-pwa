@@ -14,6 +14,7 @@ interface AuthState {
   initialized: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<User | null>;
+  pinLogin: (pin: string) => Promise<User | null>;
   logout: () => Promise<void>;
   me: () => Promise<void>;
 }
@@ -44,6 +45,31 @@ export const useAuth = create<AuthState>((set) => ({
       return null;
     } catch (err: any) {
       set({ error: err.response?.data?.detail || "Login failed" });
+      return null;
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  pinLogin: async (pin: string) => {
+    set({ loading: true, error: null });
+    try {
+      const response: any = await api.post("/auth/pin-login", { pin });
+      if (response.access_token) {
+        api.setToken(response.access_token);
+        set({ loading: false });
+        try {
+          const user = await api.get<User>("/auth/me");
+          set({ user, initialized: true });
+          return user;
+        } catch {
+          set({ error: "Failed to fetch user data" });
+          return null;
+        }
+      }
+      return null;
+    } catch (err: any) {
+      set({ error: err.response?.data?.detail || "Invalid PIN" });
       return null;
     } finally {
       set({ loading: false });
