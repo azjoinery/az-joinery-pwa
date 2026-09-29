@@ -940,91 +940,91 @@ function FloorLogDashboard() {
     qty: number,
     item: { description?: string; category?: string; unit?: string }
   ) => {
-  const safeQty = Math.max(0, Math.round(qty || 0));
-  if (safeQty <= 0) return;
+    const safeQty = Math.max(0, Math.round(qty || 0));
+    if (safeQty <= 0) return;
+    setMaterials((prev) => [
+      ...prev,
+      {
+        stockItemId,
+        jobId: selectedJobId,
+        qty: safeQty,
+        wastageQty: 0,
+        notes: `Released material: ${item.description || item.category || "Material"}`,
+      },
+    ]);
+    scheduleSave();
+  };
 
-  setMaterials((prev) => [
-    ...prev,
-    {
-      stockItemId,
-      jobId: selectedJobId,
-      qty: safeQty,
-      wastageQty: 0,
-      notes: `Released material: ${item.description || item.category || "Material"}`,
-    },
-  ]);
-  scheduleSave();
-};
   const EXTRA_MATERIAL_ROLES = new Set([
-  "supervisor",
-  "manager",
-  "department_manager",
-  "admin",
-  "office",
-  "managing_director",
-]);
+    "supervisor",
+    "manager",
+    "department_manager",
+    "admin",
+    "office",
+    "managing_director",
+  ]);
 
-const canApproveExtraMaterial = !!user && EXTRA_MATERIAL_ROLES.has(user.role);
+  const canApproveExtraMaterial = !!user && EXTRA_MATERIAL_ROLES.has(user.role);
 
-const releasedLimit = (item: { quantity?: number }) =>
-  Math.max(0, Number(item.quantity || 0));
+  const releasedLimit = (item: { quantity?: number }) =>
+    Math.max(0, Number(item.quantity || 0));
 
-const changeReleasedMaterialQty = (
-  rowKey: string,
-  item: { description?: string; category?: string; unit?: string; quantity?: number },
-  nextQty: number
-) => {
-  const safeQty = Math.max(0, Math.round(nextQty || 0));
-  const limit = releasedLimit(item);
-  const matIdx = findMaterialRow(rowKey);
+  const changeReleasedMaterialQty = (
+    rowKey: string,
+    item: { description?: string; category?: string; unit?: string; quantity?: number },
+    nextQty: number
+  ) => {
+    const safeQty = Math.max(0, Math.round(nextQty || 0));
+    const limit = releasedLimit(item);
+    const matIdx = findMaterialRow(rowKey);
 
-  if (limit > 0 && safeQty > limit) {
-    if (!canApproveExtraMaterial) {
-      alert(`Assigned limit is ${limit}. Ask a supervisor to add extra material.`);
+    if (limit > 0 && safeQty > limit) {
+      if (!canApproveExtraMaterial) {
+        alert(`Assigned limit is ${limit}. Ask a supervisor to add extra material.`);
+        return;
+      }
+
+      const reason = window.prompt(
+        `Extra material required for ${item.description || "this material"}.\nAssigned: ${limit}\nRequested: ${safeQty}\n\nEnter reason:`
+      );
+
+      if (!reason || !reason.trim()) return;
+
+      if (matIdx >= 0) {
+        setMaterials((prev) =>
+          prev.map((row, index) =>
+            index === matIdx
+              ? {
+                  ...row,
+                  qty: safeQty,
+                  notes: `EXTRA MATERIAL: ${reason.trim()}`,
+                }
+              : row
+          )
+        );
+      } else {
+        setMaterials((prev) => [
+          ...prev,
+          {
+            stockItemId: rowKey,
+            jobId: selectedJobId,
+            qty: safeQty,
+            wastageQty: 0,
+            notes: `EXTRA MATERIAL: ${reason.trim()}`,
+          },
+        ]);
+      }
+
+      scheduleSave();
       return;
     }
 
-    const reason = window.prompt(
-      `Extra material required for ${item.description || "this material"}.\nAssigned: ${limit}\nRequested: ${safeQty}\n\nEnter reason:`
-    );
-
-    if (!reason || !reason.trim()) return;
-
     if (matIdx >= 0) {
-      setMaterials((prev) =>
-        prev.map((row, index) =>
-          index === matIdx
-            ? {
-                ...row,
-                qty: safeQty,
-                notes: `EXTRA MATERIAL: ${reason.trim()}`,
-              }
-            : row
-        )
-      );
-    } else {
-      setMaterials((prev) => [
-        ...prev,
-        {
-          stockItemId: rowKey,
-          jobId: selectedJobId,
-          qty: safeQty,
-          wastageQty: 0,
-          notes: `EXTRA MATERIAL: ${reason.trim()}`,
-        },
-      ]);
+      setMaterialQty(matIdx, safeQty);
+    } else if (safeQty > 0) {
+      addReleasedMaterialRow(rowKey, safeQty, item);
     }
-
-    scheduleSave();
-    return;
-  }
-
-  if (matIdx >= 0) {
-    setMaterialQty(matIdx, safeQty);
-  } else if (safeQty > 0) {
-    addReleasedMaterialRow(rowKey, safeQty, item);
-  }
-};
+  };
 
   return (
     <>
