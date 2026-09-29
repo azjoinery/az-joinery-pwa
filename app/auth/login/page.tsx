@@ -98,7 +98,7 @@ function PinForm({ onSwitchToAdmin }: { onSwitchToAdmin: () => void }) {
     if (next.length === 6) {
       const user = await pinLogin(next);
       if (user) {
-        router.push(landingPageForRole(user.role));
+        router.push(user.pinSet === false ? "/auth/set-pin" : landingPageForRole(user.role));
       } else {
         setDigits("");
       }
