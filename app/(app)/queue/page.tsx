@@ -570,7 +570,7 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
     <div className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-ink-600">
               #{row.jobNum || "—"}
             </span>
@@ -582,6 +582,11 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
                 High
               </span>
             ) : null}
+            {p.stage && p.stage !== "Not Started" && (
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                {p.stage}
+              </span>
+            )}
           </div>
           <h3 className="mt-1 truncate text-base font-bold text-ink-950">{title}</h3>
           {row.siteAddress ? (
@@ -607,30 +612,13 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
       <WeightedBar p={p} />
 
       <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
-        <Label color={COL.cnc} name="CNC" value={`${fmt(p.cnc_done)}/${p.cnc_target || "—"}`} />
-        <Label color={COL.assembly} name="Assembly" value={p.assembly_done ? "✓" : "—"} />
-        <Label color={COL.hw} name="Hardware" value={`${fmt(p.hw_done)}/${p.hw_target || "—"}`} />
+        <Label color={COL.cnc} name="CNC" value={p.cnc_target > 0 ? `${fmt(p.cnc_done)} / ${p.cnc_target} sheets` : `${fmt(p.cnc_done)} sheets`} />
+        <Label color={COL.assembly} name="Assembly" value={p.assembly_done ? "done ✓" : "pending"} />
+        <Label color={COL.hw} name="Hardware" value={p.hw_target > 0 ? `${fmt(p.hw_done)} / ${p.hw_target} pcs` : `${fmt(p.hw_done)} pcs`} />
       </div>
 
       <div className="mt-4 flex flex-col gap-3 border-t border-ink-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        {canEdit ? (
-          <div className="flex flex-wrap items-center gap-4">
-            <Stepper
-              label="CNC boards target"
-              value={p.cnc_target}
-              disabled={busy}
-              onChange={(v) => setTargets(v, p.hw_target)}
-            />
-            <Stepper
-              label="Hardware target"
-              value={p.hw_target}
-              disabled={busy}
-              onChange={(v) => setTargets(p.cnc_target, v)}
-            />
-          </div>
-        ) : (
-          <span className="text-xs text-ink-400">Counts update from Materials — Live.</span>
-        )}
+        <span className="text-xs text-ink-400">Tallied from released material list — live.</span>
         <button
           type="button"
           onClick={toggleAssembly}

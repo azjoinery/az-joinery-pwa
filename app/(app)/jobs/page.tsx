@@ -904,6 +904,8 @@ function SupervisorView() {
   const [selectedWorker, setSelectedWorker] = useState("");
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [editJob, setEditJob] = useState<Job | null>(null);
+  const [editForm, setEditForm] = useState({ status: "", priority: "", dueDate: "", notes: "" });
 
   useEffect(() => {
     (async () => {
@@ -984,6 +986,27 @@ function SupervisorView() {
 
   const handleRecordMaterial = (job: Job) => setRecordJob(job);
 
+  const handleEdit = async () => {
+    if (!editJob) return;
+    const patch: Record<string, string> = {};
+    if (editForm.status)   patch.currentStatus = editForm.status;
+    if (editForm.priority) patch.priority = editForm.priority;
+    if (editForm.dueDate)  patch.dueDate = editForm.dueDate;
+    if (editForm.notes !== undefined) patch.notes = editForm.notes;
+    try {
+      await api.patch(`/jobs/${editJob.id}`, patch);
+      setJobs(prev => prev.map(j => j.id === editJob.id
+        ? { ...j,
+            status:   editForm.status ? (editForm.status as JobStatus) : j.status,
+            priority: editForm.priority ? (editForm.priority as Priority) : j.priority,
+            dueDate:  editForm.dueDate || j.dueDate,
+          }
+        : j
+      ));
+    } catch { /* keep local state on API failure */ }
+    setEditJob(null);
+  };
+
   return (
     <div className="page pb-nav">
       <div className="page-header">
@@ -1034,6 +1057,20 @@ function SupervisorView() {
                       <td><span className={`badge ${PRIORITY_BADGE[job.priority]}`}>{job.priority}</span></td>
                       <td>
                         <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            className="btn-sm btn-secondary"
+                            onClick={() => {
+                              setEditForm({
+                                status: job.status,
+                                priority: job.priority,
+                                dueDate: job.dueDate ?? "",
+                                notes: job.description ?? "",
+                              });
+                              setEditJob(job);
+                            }}
+                          >
+                            Edit
+                          </button>
                           <button
                             className="btn-sm btn-secondary"
                             onClick={() => { setReassignJob(job); setSelectedWorker(job.assignedTo?.id ?? ""); }}
@@ -1090,6 +1127,40 @@ function SupervisorView() {
             <button className="btn-primary w-full" disabled={!selectedWorker} onClick={handleReassign}>
               Reassign Job
             </button>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit job modal */}
+      <Modal open={!!editJob} onClose={() => setEditJob(null)} title={`Edit ${editJob?.ref}`}>
+        {editJob && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-ink-500">Status</label>
+              <select className="input" value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}>
+                <option value="Ready for Production">Ready for Production</option>
+                <option value="In Production">In Production</option>
+                <option value="Waiting Material">Waiting Material</option>
+                <option value="Done">Done</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-ink-500">Priority</label>
+              <select className="input" value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}>
+                <option value="High">High</option>
+                <option value="Normal">Normal</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-ink-500">Due date</label>
+              <input type="date" className="input" value={editForm.dueDate} onChange={e => setEditForm(f => ({ ...f, dueDate: e.target.value }))} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-ink-500">Notes</label>
+              <textarea className="input resize-none" rows={3} value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+            <button className="btn-primary w-full" onClick={handleEdit}>Save changes</button>
           </div>
         )}
       </Modal>
