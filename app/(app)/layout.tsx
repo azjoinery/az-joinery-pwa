@@ -180,7 +180,7 @@ export default function ProtectedLayout({
       {/* ================= MAIN COLUMN ================= */}
       <div className="lg:pl-rail">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/85 backdrop-blur-md">
+        <header className="sticky top-0 z-30 border-b border-ink-200 bg-white/85 backdrop-blur-md" style={{ paddingTop: "env(safe-area-inset-top)" }}>
           <div className="flex h-16 items-center justify-between gap-3 px-4 md:px-8">
             {/* Mobile brand (sidebar is hidden) */}
             <Link
