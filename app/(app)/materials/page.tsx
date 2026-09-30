@@ -32,6 +32,7 @@ type StockTransaction = {
   jobId?: string;
   userName?: string;
   txType?: string;
+  notes?: string;
   createdAt?: string;
 };
 
