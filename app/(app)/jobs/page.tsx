@@ -909,8 +909,9 @@ function SupervisorView() {
     (async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const [j, w] = await Promise.all([api.get<any[]>("/jobs"), api.get<Worker[]>("/team")]);
-        setJobs((j || []).map(normaliseJob)); setWorkers(w || []);
+        const [jr, wr] = await Promise.allSettled([api.get<any[]>("/jobs"), api.get<any[]>("/users")]);
+        if (jr.status === "fulfilled") setJobs((jr.value || []).map(normaliseJob));
+        if (wr.status === "fulfilled") setWorkers((wr.value || []).filter((u: any) => u.id && u.name));
       } catch {
         setJobs([]); setWorkers([]);
       } finally { setLoading(false); }
@@ -923,10 +924,10 @@ function SupervisorView() {
     const timer = setInterval(async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const [j, w] = await Promise.all([api.get<any[]>("/jobs"), api.get<Worker[]>("/team")]);
+        const [jr, wr] = await Promise.allSettled([api.get<any[]>("/jobs"), api.get<any[]>("/users")]);
         if (!alive) return;
-        if (j) setJobs(j.map(normaliseJob));
-        if (w) setWorkers(w);
+        if (jr.status === "fulfilled" && jr.value) setJobs(jr.value.map(normaliseJob));
+        if (wr.status === "fulfilled" && wr.value) setWorkers((wr.value).filter((u: any) => u.id && u.name));
       } catch { /* skip on network blip */ }
     }, 60_000);
     return () => { alive = false; clearInterval(timer); };
