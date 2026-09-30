@@ -620,9 +620,19 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
       <WeightedBar p={p} />
 
       <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
-        <Label color={COL.cnc} name="CNC" value={p.cnc_target > 0 ? `${fmt(p.cnc_done)} / ${p.cnc_target} sheets` : `${fmt(p.cnc_done)} sheets`} />
+        <Label
+          color={COL.cnc}
+          name="CNC"
+          value={p.cnc_target > 0 ? `${fmt(p.cnc_done)} / ${p.cnc_target} sheets` : `${fmt(p.cnc_done)} sheets`}
+          over={p.cnc_target > 0 && p.cnc_done > p.cnc_target}
+        />
         <Label color={COL.assembly} name="Assembly" value={p.assembly_done ? "done ✓" : "pending"} />
-        <Label color={COL.hw} name="Hardware" value={p.hw_target > 0 ? `${fmt(p.hw_done)} / ${p.hw_target} pcs` : `${fmt(p.hw_done)} pcs`} />
+        <Label
+          color={COL.hw}
+          name="Hardware"
+          value={p.hw_target > 0 ? `${fmt(p.hw_done)} / ${p.hw_target} pcs` : `${fmt(p.hw_done)} pcs`}
+          over={p.hw_target > 0 && p.hw_done > p.hw_target}
+        />
       </div>
 
       <MaterialBreakdown materials={p.materials} />
@@ -734,14 +744,15 @@ function Stepper({ label, value, onChange, disabled }: {
   );
 }
 
-function Label({ color, name, value }: { color: string; name: string; value: string }) {
+function Label({ color, name, value, over }: { color: string; name: string; value: string; over?: boolean }) {
   return (
-    <div className="rounded-lg bg-ink-50 px-2 py-1.5">
+    <div className={`rounded-lg px-2 py-1.5 ${over ? "bg-amber-50" : "bg-ink-50"}`}>
       <div className="flex items-center justify-center gap-1">
         <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
         <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">{name}</span>
       </div>
-      <div className="mt-0.5 text-sm font-bold tabular-nums text-ink-900">{value}</div>
+      <div className={`mt-0.5 text-sm font-bold tabular-nums ${over ? "text-amber-700" : "text-ink-900"}`}>{value}</div>
+      {over && <div className="text-[9px] font-semibold text-amber-600">needs correction</div>}
     </div>
   );
 }
