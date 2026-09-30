@@ -864,9 +864,7 @@ function FloorLogDashboard() {
         const today = new Date().toISOString().split("T")[0];
         const { counts: c, note: n, assemblyJobId: aj, assemblyDone: ad } = formRef.current;
         const rows = materialsRef.current
-          .filter((m) => m.stockItemId && (
-            (m.qty || 0) > 0 || (m.wastageQty || 0) > 0 || (m.assignedQty || 0) > 0
-          ))
+          .filter((m) => m.stockItemId)
           .map((m) => {
             const job = jobList.find((j) => j.id === m.jobId);
             return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
@@ -895,9 +893,7 @@ function FloorLogDashboard() {
     try {
       const today = new Date().toISOString().split("T")[0];
       const cleanMaterials = materials
-        .filter((m) => m.stockItemId && (
-          (m.qty || 0) > 0 || (m.wastageQty || 0) > 0 || (m.assignedQty || 0) > 0
-        ))
+        .filter((m) => m.stockItemId)
         .map((m) => {
           const job = jobList.find((j) => j.id === m.jobId);
           return { ...m, jobNum: job?.jobNum || m.jobNum || "" };
@@ -1172,7 +1168,7 @@ function FloorLogDashboard() {
                         unit={item.unit}
                         qty={mat?.qty || 0}
                         onMinus={() => {
-                         if (matIdx >= 0) changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) - 1);
+                          changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) - 1);
                       }}
                         onPlus={() => {
                          changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) + 1);
@@ -1281,7 +1277,7 @@ function FloorLogDashboard() {
                         unit={item.unit}
                         qty={mat?.qty || 0}
                         onMinus={() => {
-                         if (matIdx >= 0) changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) - 1);
+                          changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) - 1);
                       }}
                         onPlus={() => {
                           changeReleasedMaterialQty(rowKey, item, (mat?.qty || 0) + 1);
