@@ -277,6 +277,7 @@ const CABINET_LABELS: Record<string, string> = {
   cab_tall: "Tall",
   cab_drawer: "Drawer / corner",
   cab_special: "Special",
+  cab_kickbase: "Kickbase",
 };
 
 function TrackView({ loading, period, setPeriod, usedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, canAdjustCap, onDeleteEntry, onCapAdjusted }: {
