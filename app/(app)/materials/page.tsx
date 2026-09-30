@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import MaterialAssignmentPanel from "@/lib/components/MaterialAssignmentPanel";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 import type { DailyEntry, EntryMaterial } from "@/lib/types";
@@ -36,10 +35,7 @@ type StockTransaction = {
   createdAt?: string;
 };
 
-type ManagementTab = "track" | "assign" | "mine";
-type WorkerTab = "assigned" | "used";
-
-const ASSIGN_ROLES = new Set(["supervisor", "admin", "manager", "managing_director"]);
+type ManagementTab = "track" | "mine";
 const CAP_ADJUST_ROLES = new Set(["supervisor", "manager", "managing_director", "admin", "department_manager"]);
 const TRACK_ROLES = new Set([
   "supervisor",
@@ -65,11 +61,9 @@ function jobLabel(job?: JobPick) {
 
 export default function MaterialsPage() {
   const { user } = useAuth();
-  const canAssign = Boolean(user && ASSIGN_ROLES.has(user.role));
   const canTrack = Boolean(user && TRACK_ROLES.has(user.role));
   const canAdjustCap = Boolean(user && CAP_ADJUST_ROLES.has(user.role));
   const [managementTab, setManagementTab] = useState<ManagementTab>("track");
-  const [workerTab, setWorkerTab] = useState<WorkerTab>("assigned");
   const [period, setPeriod] = useState<"today" | "week">("today");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -140,7 +134,6 @@ export default function MaterialsPage() {
   }), [entries, periodStart]);
 
   const usedTotal = usageRows.reduce((sum, item) => sum + Number(item.row.qty || 0), 0);
-  const assignedTotal = usageRows.reduce((sum, item) => sum + Number(item.row.assignedQty || 0), 0);
   const lowStock = stock.filter((item) =>
     Number(item.on_hand_qty || 0) <= Number(item.reorder_point || 0)
   ).length;
@@ -148,7 +141,7 @@ export default function MaterialsPage() {
 
   const myMaterials = mine?.materials || [];
   const visibleMine = myMaterials.filter((row) =>
-    workerTab === "assigned" ? (row.assignedQty || 0) > 0 : (row.qty || 0) > 0
+    (row.assignedQty || 0) > 0 || (row.qty || 0) > 0
   );
 
   const setMyQuantity = (index: number, value: number) => {
@@ -196,7 +189,7 @@ export default function MaterialsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-orange">Workshop</p>
           <h1 className="page-title mt-1">{canTrack ? "Materials" : "My materials"}</h1>
           <p className="mt-1 text-sm text-ink-500">
-            {canTrack ? "Assign, track and review workshop materials." : "Record only what you actually used."}
+            {canTrack ? "Track and review workshop material usage." : "Record only what you actually used."}
           </p>
         </div>
         <button type="button" onClick={load} className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm font-semibold text-ink-700">
@@ -209,9 +202,8 @@ export default function MaterialsPage() {
 
       {canTrack ? (
         <>
-          <div className="mb-5 grid grid-cols-3 gap-2 rounded-xl bg-ink-100 p-1">
+          <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-ink-100 p-1">
             <TabButton active={managementTab === "track"} onClick={() => setManagementTab("track")}>Track</TabButton>
-            {canAssign ? <TabButton active={managementTab === "assign"} onClick={() => setManagementTab("assign")}>Assign</TabButton> : <span />}
             <TabButton active={managementTab === "mine"} onClick={() => setManagementTab("mine")}>My usage</TabButton>
           </div>
 
@@ -221,7 +213,6 @@ export default function MaterialsPage() {
               period={period}
               setPeriod={setPeriod}
               usedTotal={usedTotal}
-              assignedTotal={assignedTotal}
               lowStock={lowStock}
               activeJobs={activeJobs}
               rows={usageRows}
@@ -243,13 +234,9 @@ export default function MaterialsPage() {
             />
           ) : null}
 
-          {managementTab === "assign" && canAssign ? <MaterialAssignmentPanel /> : null}
-
           {managementTab === "mine" ? (
             <MyUsage
               loading={loading}
-              tab={workerTab}
-              setTab={setWorkerTab}
               rows={visibleMine}
               allRows={myMaterials}
               stockById={stockById}
@@ -263,8 +250,6 @@ export default function MaterialsPage() {
       ) : (
         <MyUsage
           loading={loading}
-          tab={workerTab}
-          setTab={setWorkerTab}
           rows={visibleMine}
           allRows={myMaterials}
           stockById={stockById}
@@ -293,12 +278,11 @@ const CABINET_LABELS: Record<string, string> = {
   cab_special: "Special",
 };
 
-function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, canAdjustCap, onDeleteEntry, onCapAdjusted }: {
+function TrackView({ loading, period, setPeriod, usedTotal, lowStock, activeJobs, rows, assemblyRows, transactions, stockById, jobsById, canAdjustCap, onDeleteEntry, onCapAdjusted }: {
   loading: boolean;
   period: "today" | "week";
   setPeriod: (value: "today" | "week") => void;
   usedTotal: number;
-  assignedTotal: number;
   lowStock: number;
   activeJobs: number;
   rows: Array<{ entry: DailyEntry; row: EntryMaterial }>;
@@ -388,6 +372,20 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
     return result;
   }, [rows, jobsById, usageTotals]);
 
+  // Per-(jobId, stockItemId) → list of { worker, qty } for per-worker breakdown
+  const workersByMaterial = useMemo(() => {
+    const map = new Map<string, Array<{ worker: string; qty: number }>>();
+    for (const { entry, row } of rows) {
+      if (!row.jobId || !row.stockItemId) continue;
+      const k = `${row.jobId}__${row.stockItemId}`;
+      const list = map.get(k) || [];
+      const qty = Number(row.qty || 0);
+      if (qty > 0) list.push({ worker: entry.employeeName || "Worker", qty });
+      map.set(k, list);
+    }
+    return map;
+  }, [rows]);
+
   const submitAdjust = async () => {
     if (!adjusting) return;
     const newQty = parseFloat(adjustQty);
@@ -424,9 +422,8 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
         )}
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Used" value={usedTotal} />
-        <Metric label="Assigned" value={assignedTotal} />
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        <Metric label="Used today" value={usedTotal} />
         <Metric label="Low stock" value={lowStock} warning />
         <Metric label="Active jobs" value={activeJobs} />
       </div>
@@ -467,6 +464,23 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
                     <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
                   </div>
                   {over && <p className="mt-1.5 text-xs font-semibold text-red-600">Over allocation — supervisor review needed.</p>}
+                  {(() => {
+                    const workers = workersByMaterial.get(`${r.jobId}__${r.stockItemId}`) || [];
+                    if (workers.length === 0) return null;
+                    return (
+                      <div className="mt-3 border-t border-ink-100 pt-2.5">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-400">Used by</p>
+                        <div className="space-y-1">
+                          {workers.map((w, i) => (
+                            <div key={i} className="flex justify-between text-xs">
+                              <span className="text-ink-600">{w.worker}</span>
+                              <span className="font-semibold tabular-nums text-ink-900">{w.qty} {r.unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -504,26 +518,19 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
           <div className="space-y-3">
             {filteredRows.map(({ entry, row }, index) => {
               const item = stockById.get(row.stockItemId);
-              const assigned = Number(row.assignedQty || 0);
               const used = Number(row.qty || 0);
-              const complete = assigned > 0 && used >= assigned;
-              const width = assigned > 0 ? Math.min(100, Math.round((used / assigned) * 100)) : 0;
               return (
                 <div key={`${entry.id}-${row.stockItemId}-${index}`} className="rounded-xl border border-ink-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-ink-950">{item?.name || "Material"}</h3>
-                      <p className="mt-0.5 truncate text-sm text-ink-500">{jobLabel(jobsById.get(row.jobId || ""))} · {entry.employeeName}</p>
+                      <h3 className="truncate font-semibold text-ink-950">{item?.name || row.notes?.replace("Released material: ", "") || "Material"}</h3>
+                      <p className="mt-0.5 truncate text-xs text-ink-500">{jobLabel(jobsById.get(row.jobId || ""))}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${complete ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
-                      {complete ? "Complete" : "In progress"}
-                    </span>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold tabular-nums text-ink-900">{used} {item?.unit || ""}</p>
+                      <p className="text-xs text-ink-500">{entry.employeeName || "Worker"}</p>
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <span className="text-ink-500">Used / assigned</span>
-                    <strong className="tabular-nums text-ink-900">{used} / {assigned || "—"} {item?.unit || ""}</strong>
-                  </div>
-                  {assigned > 0 ? <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-100"><div className={`h-full rounded-full ${complete ? "bg-green-500" : "bg-brand-orange"}`} style={{ width: `${width}%` }} /></div> : null}
                 </div>
               );
             })}
@@ -576,6 +583,9 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
                   <p className="truncate text-xs text-ink-500">{tx.userName || "Team"} · {jobLabel(jobsById.get(tx.jobId || ""))}</p>
                 </div>
                 <div className="text-right">
+                  {tx.txType === "return" && tx.notes?.startsWith("entry:") && (
+                    <span className="mb-0.5 inline-block rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700">correction</span>
+                  )}
                   <p className={`font-bold tabular-nums ${tx.txType === "return" || tx.txType === "receipt" ? "text-green-600" : "text-red-600"}`}>
                     {tx.txType === "return" || tx.txType === "receipt" ? "+" : "−"}{tx.qty || 0} {tx.unit || ""}
                   </p>
@@ -590,10 +600,8 @@ function TrackView({ loading, period, setPeriod, usedTotal, assignedTotal, lowSt
   );
 }
 
-function MyUsage({ loading, tab, setTab, rows, allRows, stockById, jobsById, setQuantity, save, saving }: {
+function MyUsage({ loading, rows, allRows, stockById, jobsById, setQuantity, save, saving }: {
   loading: boolean;
-  tab: WorkerTab;
-  setTab: (value: WorkerTab) => void;
   rows: EntryMaterial[];
   allRows: EntryMaterial[];
   stockById: Map<string, StockItem>;
@@ -604,24 +612,20 @@ function MyUsage({ loading, tab, setTab, rows, allRows, stockById, jobsById, set
 }) {
   return (
     <>
-      <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-ink-100 p-1">
-        <TabButton active={tab === "assigned"} onClick={() => setTab("assigned")}>Assigned</TabButton>
-        <TabButton active={tab === "used"} onClick={() => setTab("used")}>Used</TabButton>
-      </div>
-      {loading ? <Empty text="Loading your materials…" /> : rows.length === 0 ? <Empty text={tab === "assigned" ? "Nothing assigned to you today." : "You have not recorded any material today."} /> : (
+      {loading ? <Empty text="Loading your materials…" /> : rows.length === 0 ? <Empty text="No materials recorded yet." /> : (
         <div className="space-y-4">
           {rows.map((row, visibleIndex) => {
             const index = allRows.indexOf(row);
             const item = stockById.get(row.stockItemId);
+            const displayName = item?.name || row.notes?.replace("Released material: ", "") || "Material";
             return (
               <div key={`${row.stockItemId}-${row.jobId}-${visibleIndex}`} className="rounded-2xl border border-ink-200 bg-white p-4 shadow-sm">
-                <h2 className="text-lg font-bold text-ink-950">{item?.name || "Material"}</h2>
+                <h2 className="text-lg font-bold text-ink-950">{displayName}</h2>
                 <p className="text-sm text-ink-500">{jobLabel(jobsById.get(row.jobId || ""))}</p>
-                <p className="mt-2 text-sm font-semibold text-ink-700">Assigned {row.assignedQty || 0} {item?.unit || ""}</p>
                 <div className="mt-4 flex items-center justify-center gap-2">
-                  <button type="button" disabled={(row.qty || 0) <= 0} onClick={() => setQuantity(index, Number(row.qty || 0) - 1)} className="grid h-14 w-14 place-items-center rounded-xl border border-ink-200 bg-ink-50 text-2xl font-bold disabled:opacity-40" aria-label={`Decrease ${item?.name || "material"}`}>−</button>
-                  <input type="number" min="0" step="1" value={row.qty || 0} onChange={(event) => setQuantity(index, Number(event.target.value))} className="h-14 w-24 rounded-xl border border-ink-200 text-center text-2xl font-bold tabular-nums" aria-label={`Quantity used for ${item?.name || "material"}`} />
-                  <button type="button" onClick={() => setQuantity(index, Number(row.qty || 0) + 1)} className="grid h-14 w-14 place-items-center rounded-xl bg-brand-orange text-3xl font-bold text-white" aria-label={`Increase ${item?.name || "material"}`}>+</button>
+                  <button type="button" disabled={(row.qty || 0) <= 0} onClick={() => setQuantity(index, Number(row.qty || 0) - 1)} className="grid h-14 w-14 place-items-center rounded-xl border border-ink-200 bg-ink-50 text-2xl font-bold disabled:opacity-40" aria-label={`Decrease ${displayName}`}>−</button>
+                  <input type="number" min="0" step="1" value={row.qty || 0} onChange={(event) => setQuantity(index, Number(event.target.value))} className="h-14 w-24 rounded-xl border border-ink-200 text-center text-2xl font-bold tabular-nums" aria-label={`Quantity used for ${displayName}`} />
+                  <button type="button" onClick={() => setQuantity(index, Number(row.qty || 0) + 1)} className="grid h-14 w-14 place-items-center rounded-xl bg-brand-orange text-3xl font-bold text-white" aria-label={`Increase ${displayName}`}>+</button>
                 </div>
               </div>
             );
