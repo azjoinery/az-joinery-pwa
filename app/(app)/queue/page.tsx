@@ -62,6 +62,13 @@ type QueueJob = {
   stage?: string;
 };
 
+type MaterialItem = {
+  description: string;
+  category: "cnc" | "hardware";
+  target: number;
+  done: number;
+};
+
 type Progress = {
   progress: number;
   progressRaw: number;
@@ -72,6 +79,7 @@ type Progress = {
   hw_target: number;
   hw_done: number;
   assembly_done: boolean;
+  materials?: MaterialItem[];
 };
 
 type Row = QueueJob & { p: Progress };
@@ -617,8 +625,10 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
         <Label color={COL.hw} name="Hardware" value={p.hw_target > 0 ? `${fmt(p.hw_done)} / ${p.hw_target} pcs` : `${fmt(p.hw_done)} pcs`} />
       </div>
 
+      <MaterialBreakdown materials={p.materials} />
+
       <div className="mt-4 flex flex-col gap-3 border-t border-ink-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-xs text-ink-400">Tallied from released material list — live.</span>
+        <span className="text-xs text-ink-400">Tallied from released material list — capped at target.</span>
         <button
           type="button"
           onClick={toggleAssembly}
@@ -732,6 +742,85 @@ function Label({ color, name, value }: { color: string; name: string; value: str
         <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-500">{name}</span>
       </div>
       <div className="mt-0.5 text-sm font-bold tabular-nums text-ink-900">{value}</div>
+    </div>
+  );
+}
+
+function MaterialBreakdown({ materials }: { materials?: MaterialItem[] }) {
+  const [open, setOpen] = useState(false);
+  if (!materials || materials.length === 0) return null;
+  const cncItems = materials.filter((m) => m.category === "cnc");
+  const hwItems = materials.filter((m) => m.category === "hardware");
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-1.5 rounded-lg bg-ink-50 px-3 py-1.5 text-[11px] font-semibold text-ink-500 hover:bg-ink-100"
+      >
+        <span className="text-[9px]">{open ? "▼" : "▶"}</span>
+        Material breakdown ({materials.length} items)
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-2 rounded-xl border border-ink-100 bg-ink-50/50 px-3 py-2">
+          {cncItems.length > 0 && (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: COL.cnc }} />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">CNC materials</span>
+              </div>
+              {cncItems.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 py-0.5 pl-3.5 text-[11px]">
+                  <span className="min-w-0 flex-1 truncate text-ink-500">{m.description}</span>
+                  <span className="whitespace-nowrap font-semibold tabular-nums text-ink-700">
+                    {m.done} / {m.target}
+                  </span>
+                  <div className="h-1 w-12 overflow-hidden rounded-full bg-ink-200">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${m.target > 0 ? Math.min(100, (m.done / m.target) * 100) : 0}%`,
+                        background: COL.cnc,
+                      }}
+                    />
+                  </div>
+                  {m.target > 0 && m.done >= m.target && (
+                    <span className="text-[9px] font-bold text-green-600">✓</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {hwItems.length > 0 && (
+            <div>
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: COL.hw }} />
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Hardware</span>
+              </div>
+              {hwItems.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 py-0.5 pl-3.5 text-[11px]">
+                  <span className="min-w-0 flex-1 truncate text-ink-500">{m.description}</span>
+                  <span className="whitespace-nowrap font-semibold tabular-nums text-ink-700">
+                    {m.done} / {m.target}
+                  </span>
+                  <div className="h-1 w-12 overflow-hidden rounded-full bg-ink-200">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${m.target > 0 ? Math.min(100, (m.done / m.target) * 100) : 0}%`,
+                        background: COL.hw,
+                      }}
+                    />
+                  </div>
+                  {m.target > 0 && m.done >= m.target && (
+                    <span className="text-[9px] font-bold text-green-600">✓</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
