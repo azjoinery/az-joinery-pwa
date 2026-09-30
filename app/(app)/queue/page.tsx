@@ -133,6 +133,8 @@ function prodStageRank(stage?: string) {
 function targetProdStage(p: Progress): string | null {
   const candidates: string[] = [];
   if (p.cnc_done > 0) candidates.push("CNC Cut");
+  if (p.cnc_target > 0 && p.cnc_done >= p.cnc_target && !p.assembly_done)
+    candidates.push("Assembling");
   if (p.assembly_done) candidates.push("Hardware Fitted");
   if (p.assembly_done && p.hw_target > 0 && p.hw_done >= p.hw_target)
     candidates.push("Ready to Deliver");
