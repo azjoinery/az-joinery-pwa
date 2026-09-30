@@ -10,6 +10,7 @@ const JOB_TYPES = ["Kitchen", "Wardrobe", "Bathroom", "Laundry", "BBQ Kitchen", 
 const PRIORITIES = ["Normal", "High", "Low"];
 
 interface NewJobForm {
+  jobNum: string;
   title: string;
   clientName: string;
   clientPhone: string;
@@ -23,6 +24,7 @@ interface NewJobForm {
 }
 
 const EMPTY: NewJobForm = {
+  jobNum: "",
   title: "",
   clientName: "",
   clientPhone: "",
@@ -127,6 +129,7 @@ export default function NewJobPage() {
 
     try {
       const payload = {
+        jobNum: form.jobNum.trim(),
         client,
         phone: form.clientPhone.trim(),
         clientEmail: form.clientEmail.trim(),
@@ -195,9 +198,19 @@ export default function NewJobPage() {
 
         <div style={sectionStyle}>
           <p style={sectionTitleStyle}>Job Details</p>
-          <Field label="Job Title *">
-            <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Smith Kitchen" />
-          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12 }}>
+            <Field label="Job Number">
+              <input
+                style={inputStyle}
+                value={form.jobNum}
+                onChange={(e) => set("jobNum", e.target.value)}
+                placeholder="e.g. 2401"
+              />
+            </Field>
+            <Field label="Job Title *">
+              <input style={inputStyle} value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Smith Kitchen" />
+            </Field>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Job Type">
               <select style={inputStyle} value={form.jobType} onChange={(e) => set("jobType", e.target.value)}>
