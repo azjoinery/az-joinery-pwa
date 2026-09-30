@@ -275,7 +275,8 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 const CABINET_LABELS: Record<string, string> = {
   cab_small: "Small",
   cab_tall: "Tall",
-  cab_drawer: "Drawer / corner",
+  cab_corner: "Corner",
+  cab_drawer: "Drawer",
   cab_special: "Special",
   cab_kickbase: "Kickbase",
 };

@@ -111,13 +111,17 @@ interface EditJobForm {
   notes: string;
 }
 
+// Mirrors PROD_TRACK_STAGES on the server. A stage missing here makes
+// normaliseJob fall back to the first column, stranding those jobs.
 const DEFAULT_STAGES: StageDefinition[] = [
   { name: "Not Started", pct: 0 },
   { name: "Materials In", pct: 20 },
   { name: "CNC Cut", pct: 40 },
   { name: "Assembling", pct: 60 },
   { name: "Hardware Fitted", pct: 80 },
-  { name: "QA Passed", pct: 100 },
+  { name: "QA Passed", pct: 95 },
+  { name: "Ready to Deliver", pct: 95 },
+  { name: "Delivered", pct: 100 },
 ];
 
 const ASSIGNABLE_ROLES = new Set(["cabinet_maker", "employee", "contractor", "installer", "supervisor"]);

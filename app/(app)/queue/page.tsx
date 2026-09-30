@@ -115,16 +115,24 @@ const EMPTY_P: Progress = {
 
 /**
  * Ordered production sub-stages. Higher rank = further along.
- * Advancement is always forward-only (never demotes a stage).
+ *
+ * Must stay in step with PROD_TRACK_STAGES on the server — a stage missing here
+ * ranks as -1 and would be treated as behind every other stage.
  */
 const PROD_STAGE_RANK: Record<string, number> = {
   "Not Started": 0,
-  "CNC Cut": 1,
-  "Assembling": 2,
-  "Hardware Fitted": 3,
-  "Ready to Deliver": 4,
-  "Delivered": 5,
+  "Materials In": 1,
+  "CNC Cut": 2,
+  "Assembling": 3,
+  "Hardware Fitted": 4,
+  "QA Passed": 5,
+  "Ready to Deliver": 6,
+  "Delivered": 7,
 };
+
+// Stages whose entry condition is derived from material counts. Only these may
+// be moved back automatically when a correction is logged.
+const DEMOTABLE_STAGES = new Set(["Hardware Fitted", "Ready to Deliver"]);
 function prodStageRank(stage?: string) {
   return PROD_STAGE_RANK[stage || ""] ?? -1;
 }
@@ -133,10 +141,16 @@ function prodStageRank(stage?: string) {
  * Returns the stage the job SHOULD be in based on current progress,
  * or null if no advancement is warranted.
  *
- * Rules (forward-only — won't regress a stage):
+ * Rules:
  *   Any CNC usage recorded  → advance to "CNC Cut"
  *   assembly_done = true    → advance to "Hardware Fitted"
  *   hw_done ≥ hw_target > 0 AND assembly done → advance to "Ready to Deliver"
+ *
+ * Advances freely. Only moves BACK out of the finished stages ("Hardware
+ * Fitted" / "Ready to Deliver") when a material correction means the job no
+ * longer qualifies, so a job can never sit on "Ready to Deliver" while short.
+ * Earlier stages stay under manual control on the Jobs board, and a job that
+ * has physically shipped ("Delivered") is never touched.
  */
 function targetProdStage(p: Progress): string | null {
   const candidates: string[] = [];
@@ -147,14 +161,16 @@ function targetProdStage(p: Progress): string | null {
   if (p.assembly_done && p.hw_target > 0 && p.hw_done >= p.hw_target)
     candidates.push("Ready to Deliver");
 
-  // Pick the highest-rank candidate that is strictly ahead of the current stage
-  let best: string | null = null;
-  let bestRank = prodStageRank(p.stage);
+  let earned = "Not Started";
   for (const c of candidates) {
-    const r = prodStageRank(c);
-    if (r > bestRank) { best = c; bestRank = r; }
+    if (prodStageRank(c) > prodStageRank(earned)) earned = c;
   }
-  return best;
+
+  const cur = prodStageRank(p.stage);
+  const want = prodStageRank(earned);
+  if (want > cur) return earned;
+  if (want < cur && DEMOTABLE_STAGES.has(p.stage)) return earned;
+  return null;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -168,8 +184,8 @@ export default function ProductionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Visual feedback when a stage was auto-advanced: jobId → new stage name
-  const [advanced, setAdvanced] = useState<Record<string, string>>({});
+  // Visual feedback when a stage changed automatically: jobId → new stage + direction
+  const [advanced, setAdvanced] = useState<Record<string, { stage: string; back: boolean }>>({});
 
   // Reserved for future executive-tab data (not yet rendered)
 
@@ -185,13 +201,14 @@ export default function ProductionPage() {
   const autoAdvanceJob = useCallback(async (jobId: string, p: Progress) => {
     const newStage = targetProdStage(p);
     if (!newStage) return;
+    const back = prodStageRank(newStage) < prodStageRank(p.stage);
     try {
       await api.patch(`/jobs/${jobId}/production-stage`, { stage: newStage });
       setProgress((cur) => ({
         ...cur,
         [jobId]: { ...p, stage: newStage },
       }));
-      setAdvanced((prev) => ({ ...prev, [jobId]: newStage }));
+      setAdvanced((prev) => ({ ...prev, [jobId]: { stage: newStage, back } }));
       setTimeout(
         () => setAdvanced((prev) => { const n = { ...prev }; delete n[jobId]; return n; }),
         4000
@@ -310,7 +327,7 @@ function ProductionQueueView({ ready, building, loading, canEdit, advanced, onPr
   building: Row[];
   loading: boolean;
   canEdit: boolean;
-  advanced: Record<string, string>;
+  advanced: Record<string, { stage: string; back: boolean }>;
   onProgress: (jobId: string, p: Progress) => void;
 }) {
   const total = ready.length + building.length;
@@ -543,7 +560,7 @@ function Metric({ label, value, color }: { label: string; value: number | null; 
 function JobRow({ row, canEdit, advancedTo, onProgress }: {
   row: Row;
   canEdit: boolean;
-  advancedTo?: string;
+  advancedTo?: { stage: string; back: boolean };
   onProgress: (p: Progress) => void;
 }) {
   const { p } = row;
@@ -642,8 +659,14 @@ function JobRow({ row, canEdit, advancedTo, onProgress }: {
 
       {/* Status / auto-advance feedback */}
       {advancedTo ? (
-        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-semibold text-blue-700">
-          ✦ Stage auto-advanced → {advancedTo}
+        <div className={`mt-3 rounded-lg border px-3 py-2 text-center text-xs font-semibold ${
+          advancedTo.back
+            ? "border-amber-200 bg-amber-50 text-amber-700"
+            : "border-blue-200 bg-blue-50 text-blue-700"
+        }`}>
+          {advancedTo.back
+            ? `↩ Stage moved back → ${advancedTo.stage} (material corrected)`
+            : `✦ Stage auto-advanced → ${advancedTo.stage}`}
         </div>
       ) : p.progress < 100 ? (
         <p className="mt-3 rounded-lg bg-ink-50 px-3 py-2 text-center text-xs text-ink-400">
