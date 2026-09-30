@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api/client";
+import ReportTab from "./ReportTab";
 
 interface QHSIncident {
   id: string;
@@ -31,7 +32,7 @@ interface PerformanceRow {
 const INCIDENT_TYPES = ["Near Miss", "Injury", "Equipment Damage", "Hazard Identified", "Other"];
 
 export default function AnalyticsPage() {
-  const [tab, setTab] = useState<"kpi" | "staff" | "qhs">("kpi");
+  const [tab, setTab] = useState<"kpi" | "staff" | "qhs" | "reports">("kpi");
   const [incidents, setIncidents] = useState<QHSIncident[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<{ type: string; description: string; severity: "Low" | "Medium" | "High" }>({
@@ -168,6 +169,12 @@ export default function AnalyticsPage() {
         >
           QHS
         </button>
+        <button
+          onClick={() => setTab("reports")}
+          className={`px-4 py-2 font-medium ${tab === "reports" ? "text-orange-600 border-b-2 border-orange-600" : "text-gray-600"}`}
+        >
+          Reports
+        </button>
       </div>
 
       {tab === "kpi" && (
@@ -230,6 +237,8 @@ export default function AnalyticsPage() {
           )}
         </div>
       )}
+
+      {tab === "reports" && <ReportTab />}
 
       {tab === "qhs" && (
         <div className="space-y-4">
