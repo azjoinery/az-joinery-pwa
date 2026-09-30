@@ -908,8 +908,9 @@ function SupervisorView() {
   useEffect(() => {
     (async () => {
       try {
-        const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
-        setJobs(j); setWorkers(w);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const [j, w] = await Promise.all([api.get<any[]>("/jobs"), api.get<Worker[]>("/team")]);
+        setJobs((j || []).map(normaliseJob)); setWorkers(w || []);
       } catch {
         setJobs([]); setWorkers([]);
       } finally { setLoading(false); }
@@ -921,9 +922,10 @@ function SupervisorView() {
     let alive = true;
     const timer = setInterval(async () => {
       try {
-        const [j, w] = await Promise.all([api.get<Job[]>("/jobs"), api.get<Worker[]>("/team")]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const [j, w] = await Promise.all([api.get<any[]>("/jobs"), api.get<Worker[]>("/team")]);
         if (!alive) return;
-        if (j) setJobs(j);
+        if (j) setJobs(j.map(normaliseJob));
         if (w) setWorkers(w);
       } catch { /* skip on network blip */ }
     }, 60_000);
