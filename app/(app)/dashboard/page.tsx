@@ -1530,6 +1530,7 @@ function FloorLogDashboard() {
                           const item = stockList.find((s) => s.id === sid);
                           const name = item?.name
                             ?? (sid.startsWith("released:") ? (sid.includes(":cnc:") ? "CNC material" : "Hardware item") : null)
+                            ?? (sid.startsWith("stk_") ? "Deleted item" : null)
                             ?? (sid || "Unknown item");
                           const unit = item?.unit ?? "";
                           return (
