@@ -731,9 +731,16 @@ function JobDesignDetail({
   const [overrideReason, setOverrideReason] = useState("");
   const [productionNotes, setProductionNotes] = useState("");
   const [hwList, setHwList] = useState<Array<{ description: string; qty: number; unit: string }>>([]);
+  const [unlinkSkipped, setUnlinkSkipped] = useState(false);
+  const [linkingMid, setLinkingMid] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState<Record<string, string>>({});
+  const [linkSelected, setLinkSelected] = useState<Record<string, string>>({});
+  const [justLinked, setJustLinked] = useState<string[]>([]);
 
   const canOverrideRelease = !!user && TOP_ROLES.includes(user.role);
   const isReleased = currentJob.releaseStatus === "Released";
+  const unlinkedMaterials = materials.filter((m) => !m.stockItemId);
+  const allNowLinked = unlinkedMaterials.length === 0 && justLinked.length > 0;
 
   useEffect(() => {
     loadChecklist();
@@ -826,6 +833,21 @@ function JobDesignDetail({
       // Non-fatal — the Release tab will just show a generic state.
     } finally {
       setReleaseChecking(false);
+    }
+  };
+
+  const linkMaterial = async (mid: string) => {
+    const stockItemId = linkSelected[mid];
+    if (!stockItemId) return;
+    setLinkingMid(mid);
+    try {
+      await api.patch<MaterialLine>(`/design/materials/${mid}`, { stockItemId });
+      setMaterials((prev) => prev.map((m) => (m.id === mid ? { ...m, stockItemId } : m)));
+      setJustLinked((prev) => [...prev, mid]);
+    } catch {
+      // silently ignore; row stays unlinked
+    } finally {
+      setLinkingMid(null);
     }
   };
 
@@ -1728,6 +1750,98 @@ function JobDesignDetail({
                 )}
               </div>
 
+              {/* Stock-link warning */}
+              {!unlinkSkipped && unlinkedMaterials.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-900">
+                        {unlinkedMaterials.length} material{unlinkedMaterials.length > 1 ? "s" : ""} not linked to stock
+                      </p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        Inventory won&apos;t move on +/− taps until linked. Link them now or skip.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {justLinked.map((mid) => {
+                      const mat = materials.find((m) => m.id === mid);
+                      if (!mat) return null;
+                      return (
+                        <div key={mid} className="flex items-center justify-between gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2">
+                          <span className="text-sm text-gray-800 truncate">{mat.description}</span>
+                          <span className="shrink-0 text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">just linked ✓</span>
+                        </div>
+                      );
+                    })}
+                    {unlinkedMaterials.map((mat) => {
+                      const searchVal = linkSearch[mat.id] || "";
+                      const matches = searchVal.length >= 2
+                        ? stockItems.filter((s) => s.name.toLowerCase().includes(searchVal.toLowerCase())).slice(0, 8)
+                        : [];
+                      return (
+                        <div key={mat.id} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-800 truncate flex-1 min-w-0">{mat.description}</span>
+                            <div className="relative shrink-0">
+                              <input
+                                type="text"
+                                value={linkSearch[mat.id] || ""}
+                                onChange={(e) => setLinkSearch((prev) => ({ ...prev, [mat.id]: e.target.value }))}
+                                placeholder="Search stock…"
+                                className="w-36 px-2 py-1.5 border border-gray-300 rounded text-xs"
+                              />
+                              {matches.length > 0 && (
+                                <div className="absolute right-0 top-full mt-0.5 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-40 overflow-y-auto">
+                                  {matches.map((s) => (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setLinkSearch((prev) => ({ ...prev, [mat.id]: s.name }));
+                                        setLinkSelected((prev) => ({ ...prev, [mat.id]: s.id }));
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                                    >
+                                      {s.name}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!linkSelected[mat.id] || linkingMid === mat.id}
+                              onClick={() => linkMaterial(mat.id)}
+                              className="shrink-0 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {linkingMid === mat.id ? "…" : "Link"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="border-t border-amber-200 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setUnlinkSkipped(true)}
+                      className="text-xs text-gray-400 hover:text-gray-600 underline"
+                    >
+                      Skip — release without stock links
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!unlinkSkipped && allNowLinked && (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center gap-2">
+                  <span className="text-green-600 text-base">✓</span>
+                  <p className="text-sm font-semibold text-green-800">All materials linked to stock — ready to release.</p>
+                </div>
+              )}
+
               {releaseError && (
                 <div className="alert-danger">{releaseError}</div>
               )}
@@ -1789,6 +1903,7 @@ function JobDesignDetail({
                   onClick={releaseJob}
                   disabled={
                     releaseSaving ||
+                    (!unlinkSkipped && unlinkedMaterials.length > 0) ||
                     (releaseCheck ? releaseCheck.missing.length > 0 && !(useOverride && overrideReason.trim()) : false)
                   }
                   className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
