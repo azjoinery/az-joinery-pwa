@@ -37,7 +37,7 @@ export default function LoginPage() {
             </p>
 
             <div className="mt-10 flex flex-wrap gap-x-10 gap-y-5">
-              <Metric value="7+" label="Years of craft" />
+              <Metric value="12+" label="Years of craft" />
               <Metric value="100%" label="Custom made" />
               <Metric value="Sydney" label="Chipping Norton" />
             </div>

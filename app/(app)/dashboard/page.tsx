@@ -677,6 +677,7 @@ interface StockPick {
   on_hand_qty?: number;
   stockType?: string;
   category?: string;
+  active?: boolean;
 }
 
 function pickDept(stk?: StockPick): "cnc" | "hardware" {
@@ -778,7 +779,7 @@ function FloorLogDashboard() {
 
   useEffect(() => {
     loadTodayEntry();
-    api.get<StockPick[]>("/stock/items?active=true")
+    api.get<StockPick[]>("/stock/items")
       .then((rows) => setStockList(rows || [])).catch(() => {});
     api.get<any[]>("/jobs").then((rows) => setJobList(rows || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1521,10 +1522,10 @@ function FloorLogDashboard() {
                         {k.replace("cab_", "").replace(/_/g, " ")} × {v}
                       </span>
                     ))}
-                    {(entry.materials || []).length > 0 && (
+                    {(entry.materials || []).filter((m) => m.qty > 0).length > 0 && (
                       <div className="mt-3 border-t border-ink-100 pt-3">
                         <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400">Materials used</p>
-                        {(entry.materials || []).map((mat, i) => {
+                        {(entry.materials || []).filter((m) => m.qty > 0).map((mat, i) => {
                           const item = stockList.find((s) => s.id === mat.stockItemId);
                           const name = item?.name ?? mat.stockItemId ?? "Unknown item";
                           const unit = item?.unit ?? "";
@@ -1611,6 +1612,7 @@ function FloorLogDashboard() {
             <div className="max-h-72 overflow-y-auto">
               {(() => {
                 const filtered = stockList
+                  .filter((s) => s.active !== false)
                   .filter((s) => pickDept(s) === pickerOpen.dept)
                   .filter(
                     (s) =>
