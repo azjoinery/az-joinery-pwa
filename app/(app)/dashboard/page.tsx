@@ -805,7 +805,7 @@ function FloorLogDashboard() {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const data = await api.get<DailyEntry[]>("/entries");
+      const data = await api.get<DailyEntry[]>(`/entries?employeeId=${user?.id}`);
       setHistoryEntries(data || []);
     } catch {
       setHistoryEntries([]);
