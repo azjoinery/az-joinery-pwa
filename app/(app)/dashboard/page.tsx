@@ -1504,7 +1504,6 @@ function FloorLogDashboard() {
             <div className="space-y-4">
               {historyEntries.map((entry) => {
                 const total = Object.values(entry.counts || {}).reduce((s, n) => s + n, 0);
-                const matCount = (entry.materials || []).reduce((s, m) => s + m.qty, 0);
                 return (
                   <div key={entry.id} className="rounded-xl border border-ink-200 bg-white p-4">
                     <div className="mb-3 flex items-center justify-between">
@@ -1522,7 +1521,33 @@ function FloorLogDashboard() {
                         {k.replace("cab_", "").replace(/_/g, " ")} × {v}
                       </span>
                     ))}
-                    {matCount > 0 && <p className="mt-1 text-xs text-ink-500">{matCount} material units used</p>}
+                    {(entry.materials || []).length > 0 && (
+                      <div className="mt-3 border-t border-ink-100 pt-3">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400">Materials used</p>
+                        {(entry.materials || []).map((mat, i) => {
+                          const item = stockList.find((s) => s.id === mat.stockItemId);
+                          const name = item?.name ?? mat.stockItemId ?? "Unknown item";
+                          const unit = item?.unit ?? "";
+                          return (
+                            <div key={i} className="flex items-center justify-between py-1">
+                              <div className="min-w-0 flex-1 pr-2">
+                                <p className="truncate text-xs font-medium text-ink-900">{name}</p>
+                                <p className="text-[10px] text-ink-400">
+                                  {mat.jobNum ? `Job #${mat.jobNum}` : ""}
+                                  {mat.jobNum && (mat.wastageQty ?? 0) > 0 ? " · " : ""}
+                                  {(mat.wastageQty ?? 0) > 0 && (
+                                    <span className="font-medium text-red-600">+{mat.wastageQty} waste</span>
+                                  )}
+                                </p>
+                              </div>
+                              <span className="shrink-0 text-xs font-semibold text-orange-600">
+                                −{mat.qty} {unit}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {entry.note && <p className="mt-2 text-sm italic text-ink-600">"{entry.note}"</p>}
                   </div>
                 );
