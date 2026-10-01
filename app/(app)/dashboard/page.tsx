@@ -1526,8 +1526,11 @@ function FloorLogDashboard() {
                       <div className="mt-3 border-t border-ink-100 pt-3">
                         <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-400">Materials used</p>
                         {(entry.materials || []).filter((m) => m.qty > 0).map((mat, i) => {
-                          const item = stockList.find((s) => s.id === mat.stockItemId);
-                          const name = item?.name ?? mat.stockItemId ?? "Unknown item";
+                          const sid = mat.stockItemId ?? "";
+                          const item = stockList.find((s) => s.id === sid);
+                          const name = item?.name
+                            ?? (sid.startsWith("released:") ? (sid.includes(":cnc:") ? "CNC material" : "Hardware item") : null)
+                            ?? (sid || "Unknown item");
                           const unit = item?.unit ?? "";
                           return (
                             <div key={i} className="flex items-center justify-between py-1">
