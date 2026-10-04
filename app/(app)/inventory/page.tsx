@@ -1062,6 +1062,16 @@ function StockItemDetail({
 
 // -------------------------------------------------------------- Offcuts ----
 
+const OFFCUT_TYPES = ["Board / Sheet", "Solid Timber", "Panel", "Other"] as const;
+type OffcutType = typeof OFFCUT_TYPES[number];
+
+const STATUS_OFFCUT: Record<string, string> = {
+  Available: "badge-success",
+  "Partially Used": "badge-warning",
+  Reserved: "badge-info",
+  Used: "badge-neutral",
+};
+
 function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
   const [offcuts, setOffcuts] = useState<Offcut[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1070,71 +1080,80 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
   const [adding, setAdding] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [actionMode, setActionMode] = useState<"reserve" | "use" | null>(null);
-  const [actionJobId, setActionJobId] = useState("");
-  const [actionQty, setActionQty] = useState(0);
+  const [actionJobNum, setActionJobNum] = useState("");
+  const [actionQty, setActionQty] = useState(1);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSaving, setActionSaving] = useState(false);
 
   const [form, setForm] = useState({
-    category: "Board Materials", description: "", colour: "", thickness: "",
-    length: 0, width: 0, quantity: 1, unit: "Piece", storageLocation: "", estimatedValue: 0,
+    materialType: "Board / Sheet" as OffcutType,
+    description: "",
+    colour: "",
+    thickness: "",
+    length: "" as string | number,
+    width: "" as string | number,
+    quantity: 1,
+    unit: "Piece",
+    storageLocation: "",
+    sourceJobNum: "",
+    category: "Board / Sheet",
   });
 
-  useEffect(() => {
-    loadOffcuts();
-  }, []);
+  useEffect(() => { loadOffcuts(); }, []);
 
   const loadOffcuts = async () => {
     setLoading(true);
     try {
       const data = await api.get<Offcut[]>("/offcuts");
       setOffcuts(data || []);
-    } catch (err) {
-      // leave list empty, non-fatal
+    } catch {
+      // non-fatal
     } finally {
       setLoading(false);
     }
   };
+
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
 
   const addOffcut = async () => {
     if (!form.description.trim()) return;
     setAdding(true);
     setAddError(null);
     try {
-      await api.post("/offcuts", form);
-      setForm({ ...form, description: "", length: 0, width: 0, quantity: 1, estimatedValue: 0 });
+      await api.post("/offcuts", {
+        ...form,
+        category: form.materialType,
+        length: form.length === "" ? 0 : Number(form.length),
+        width: form.width === "" ? 0 : Number(form.width),
+      });
+      setForm({ materialType: "Board / Sheet", description: "", colour: "", thickness: "", length: "", width: "", quantity: 1, unit: "Piece", storageLocation: "", sourceJobNum: "", category: "Board / Sheet" });
       setShowForm(false);
       loadOffcuts();
-    } catch (err) {
-      setAddError("Couldn't save this offcut — it was not recorded. Check your connection and try again.");
+    } catch {
+      setAddError("Couldn't save — check your connection and try again.");
     } finally {
       setAdding(false);
     }
   };
 
   const startAction = (id: string, mode: "reserve" | "use") => {
-    setActionId(id);
-    setActionMode(mode);
-    setActionJobId("");
-    setActionQty(0);
-    setActionError(null);
+    setActionId(id); setActionMode(mode); setActionJobNum(""); setActionQty(1); setActionError(null);
   };
 
   const submitAction = async () => {
-    if (!actionId || !actionJobId.trim()) return;
+    if (!actionId || !actionJobNum.trim()) return;
     setActionSaving(true);
     setActionError(null);
     try {
       if (actionMode === "reserve") {
-        await api.post(`/offcuts/${actionId}/reserve`, { jobId: actionJobId });
+        await api.post(`/offcuts/${actionId}/reserve`, { jobId: actionJobNum });
       } else {
-        await api.post(`/offcuts/${actionId}/use`, { jobId: actionJobId, quantityUsed: actionQty || 1 });
+        await api.post(`/offcuts/${actionId}/use`, { jobId: actionJobNum, quantityUsed: actionQty });
       }
-      setActionId(null);
-      setActionMode(null);
+      setActionId(null); setActionMode(null);
       loadOffcuts();
-    } catch (err) {
-      setActionError("Couldn't complete this action — check the job ID and try again.");
+    } catch {
+      setActionError("Couldn't complete — check the job number and try again.");
     } finally {
       setActionSaving(false);
     }
@@ -1143,75 +1162,182 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
   return (
     <div className="space-y-4">
       <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
-        + Log Offcut
+        {showForm ? "Cancel" : "+ Log Offcut"}
       </button>
 
       {showForm && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-          <input type="text" placeholder="Description (e.g. 400x250mm White Melamine offcut)" value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-          <div className="grid grid-cols-2 gap-2">
-            <input type="text" placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            <input type="text" placeholder="Colour" value={form.colour} onChange={(e) => setForm({ ...form, colour: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+        <div className="card card-pad space-y-4">
+
+          {/* Material type chips */}
+          <div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Material type</p>
+            <div className="flex flex-wrap gap-2">
+              {OFFCUT_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => set({ materialType: t, category: t })}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${form.materialType === t ? "bg-brand-orange text-white" : "bg-ink-100 text-ink-600 hover:bg-ink-200"}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <input type="number" placeholder="Length (mm)" value={form.length} onChange={(e) => setForm({ ...form, length: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            <input type="number" placeholder="Width (mm)" value={form.width} onChange={(e) => setForm({ ...form, width: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            <input type="number" placeholder="Qty" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: parseFloat(e.target.value) || 1 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+
+          {/* Material name */}
+          <div>
+            <label className="label">Material name</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="e.g. HMR, MDF, White Melamine…"
+              value={form.description}
+              onChange={(e) => set({ description: e.target.value })}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="text" placeholder="Storage location" value={form.storageLocation} onChange={(e) => setForm({ ...form, storageLocation: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-            <input type="number" placeholder="Estimated value ($)" value={form.estimatedValue} onChange={(e) => setForm({ ...form, estimatedValue: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+
+          {/* Colour + Thickness */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Colour / Finish</label>
+              <input type="text" className="input" placeholder="e.g. White, Raw" value={form.colour} onChange={(e) => set({ colour: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Thickness</label>
+              <div className="relative">
+                <input type="text" className="input pr-9" placeholder="16" value={form.thickness} onChange={(e) => set({ thickness: e.target.value })} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">mm</span>
+              </div>
+            </div>
           </div>
+
+          {/* Dimensions */}
+          <div>
+            <label className="label">Dimensions</label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <input type="number" className="input pr-9" placeholder="Length" value={form.length} onChange={(e) => set({ length: e.target.value })} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">mm</span>
+              </div>
+              <div className="relative">
+                <input type="number" className="input pr-9" placeholder="Width" value={form.width} onChange={(e) => set({ width: e.target.value })} />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">mm</span>
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] text-ink-400">Leave blank if irregular shape</p>
+          </div>
+
+          {/* Qty + Location */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Quantity</label>
+              <input type="number" className="input" min={1} value={form.quantity} onChange={(e) => set({ quantity: parseInt(e.target.value) || 1 })} />
+            </div>
+            <div>
+              <label className="label">Rack / Bay</label>
+              <input type="text" className="input" placeholder="e.g. Bay 3" value={form.storageLocation} onChange={(e) => set({ storageLocation: e.target.value })} />
+            </div>
+          </div>
+
+          {/* Source job */}
+          <div>
+            <label className="label">Source job <span className="font-normal text-ink-400">(optional)</span></label>
+            <input type="text" className="input" placeholder="Job #0001" value={form.sourceJobNum} onChange={(e) => set({ sourceJobNum: e.target.value })} />
+          </div>
+
           {addError && <div className="alert-danger">{addError}</div>}
-          <button onClick={addOffcut} disabled={adding || !form.description.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
-            {adding ? "Saving..." : "Save Offcut"}
+
+          <button onClick={addOffcut} disabled={adding || !form.description.trim()} className="btn-primary w-full">
+            {adding ? "Saving…" : "Save offcut"}
           </button>
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-8 text-gray-600">Loading offcuts...</div>
+        <div className="flex flex-col gap-3">{[1, 2, 3].map((i) => <div key={i} className="skeleton h-20 rounded-card" />)}</div>
       ) : offcuts.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">No offcuts logged yet</div>
+        <div className="empty mt-4">
+          <p className="empty-title">No offcuts logged</p>
+          <p className="empty-body">Tap + Log Offcut to record a piece for later use.</p>
+        </div>
       ) : (
         <div className="space-y-2">
-          {offcuts.map((o) => (
-            <div key={o.id} className="card card-pad">
-              <div className="flex justify-between items-start mb-1">
-                <div>
-                  <span className="text-xs text-gray-400">{o.offcutId}</span>
-                  <p className="text-sm text-gray-900">{o.description}</p>
-                  <p className="text-xs text-gray-500">
-                    {o.length && o.width ? `${o.length}×${o.width}mm · ` : ""}{o.quantity} {o.unit}
-                    {o.estimatedValue ? ` · ~$${o.estimatedValue}` : ""}
-                  </p>
-                </div>
-                <span className="text-xs bg-gray-100 px-2 py-1 rounded">{o.status}</span>
-              </div>
-              {(o.status === "Available" || o.status === "Partially Used") && (
-                <div className="flex gap-2 mt-2">
-                  <button onClick={() => startAction(o.id, "reserve")} className="text-xs text-orange-600 hover:text-orange-800">Reserve for job</button>
-                  <button onClick={() => startAction(o.id, "use")} className="text-xs text-orange-600 hover:text-orange-800">Use on job</button>
-                </div>
-              )}
-              {actionId === o.id && (
-                <div className="mt-2 p-3 bg-gray-50 rounded space-y-2">
-                  <input type="text" placeholder="Job ID" value={actionJobId} onChange={(e) => setActionJobId(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
-                  {actionMode === "use" && (
-                    <input type="number" placeholder="Quantity used" value={actionQty} onChange={(e) => setActionQty(parseFloat(e.target.value) || 0)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
-                  )}
-                  {actionError && <p className="text-xs text-red-600">{actionError}</p>}
-                  <div className="flex gap-2">
-                    <button onClick={submitAction} disabled={actionSaving || !actionJobId.trim()} className="flex-1 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400">
-                      {actionSaving ? "Saving..." : "Confirm"}
-                    </button>
-                    <button onClick={() => { setActionId(null); setActionMode(null); }} className="flex-1 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Cancel</button>
+          {offcuts.map((o) => {
+            const headline = [o.description, o.colour].filter(Boolean).join(" — ");
+            const dims = [
+              o.thickness ? `${o.thickness}mm` : "",
+              o.length && o.width ? `${o.length} × ${o.width} mm` : "",
+            ].filter(Boolean).join(" · ");
+            return (
+              <div key={o.id} className="card card-pad">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink-900">{headline || o.description}</p>
+                    {dims && <p className="text-xs text-ink-500 mt-0.5">{dims}</p>}
                   </div>
+                  <span className={`badge shrink-0 ${STATUS_OFFCUT[o.status] ?? "badge-neutral"}`}>{o.status}</span>
                 </div>
-              )}
-            </div>
-          ))}
+
+                <div className="flex items-center gap-4 border-t border-ink-100 pt-2 text-[11px] text-ink-400">
+                  {o.storageLocation && (
+                    <span className="flex items-center gap-1">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      {o.storageLocation}
+                    </span>
+                  )}
+                  {o.sourceJobNum && (
+                    <span className="flex items-center gap-1">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-4 0v2M8 7V5a2 2 0 014 0"/></svg>
+                      Job #{o.sourceJobNum}
+                    </span>
+                  )}
+                  <span className="ml-auto font-mono text-[10px] text-ink-300">{o.offcutId}</span>
+                </div>
+
+                {(o.status === "Available" || o.status === "Partially Used") && (
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={() => startAction(o.id, "reserve")} className="flex-1 rounded-lg border border-ink-200 py-1.5 text-xs font-medium text-ink-600 hover:bg-ink-50">
+                      Reserve
+                    </button>
+                    <button onClick={() => startAction(o.id, "use")} className="flex-1 rounded-lg bg-brand-orange py-1.5 text-xs font-medium text-white hover:bg-orange-600">
+                      Use on job
+                    </button>
+                  </div>
+                )}
+
+                {actionId === o.id && (
+                  <div className="mt-3 space-y-2 rounded-lg bg-ink-50 p-3">
+                    <p className="text-xs font-medium text-ink-700">
+                      {actionMode === "reserve" ? "Reserve for job" : "Record use on job"}
+                    </p>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Job # (e.g. 0001)"
+                      value={actionJobNum}
+                      onChange={(e) => setActionJobNum(e.target.value)}
+                    />
+                    {actionMode === "use" && (
+                      <div>
+                        <label className="label">Quantity used</label>
+                        <input type="number" className="input" min={1} value={actionQty} onChange={(e) => setActionQty(parseInt(e.target.value) || 1)} />
+                      </div>
+                    )}
+                    {actionError && <p className="text-xs text-red-600">{actionError}</p>}
+                    <div className="flex gap-2">
+                      <button onClick={submitAction} disabled={actionSaving || !actionJobNum.trim()} className="btn-primary flex-1 py-1.5 text-sm">
+                        {actionSaving ? "Saving…" : "Confirm"}
+                      </button>
+                      <button onClick={() => { setActionId(null); setActionMode(null); }} className="flex-1 rounded-lg bg-ink-100 py-1.5 text-sm font-medium text-ink-700 hover:bg-ink-200">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

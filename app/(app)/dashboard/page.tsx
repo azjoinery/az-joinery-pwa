@@ -436,24 +436,29 @@ function StatTile({
   value: number | null;
   href: string;
 }) {
-  return (
-    <Link href={href} className="card-interactive group card-pad block">
+  const active = value != null && value > 0;
+  const inner = (
+    <>
       <div className="flex items-start justify-between">
-        <span className="grid h-9 w-9 place-items-center rounded-lg bg-ink-100 text-ink-500 transition-colors group-hover:bg-brand-orange/10 group-hover:text-brand-orange">
+        <span className={`grid h-9 w-9 place-items-center rounded-lg transition-colors ${active ? "bg-ink-100 text-ink-500 group-hover:bg-brand-orange/10 group-hover:text-brand-orange" : "bg-ink-50 text-ink-300"}`}>
           <Icon name={icon} size={18} />
         </span>
-        <Icon
-          name="chevronRight"
-          size={16}
-          className="text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
-        />
+        {active && (
+          <Icon
+            name="chevronRight"
+            size={16}
+            className="text-ink-300 transition-transform group-hover:translate-x-0.5 group-hover:text-ink-500"
+          />
+        )}
       </div>
-      <div className="mt-3 font-heading text-2xl font-semibold tabular tracking-tight text-ink-900">
+      <div className={`mt-3 font-heading text-2xl font-semibold tabular tracking-tight ${active ? "text-ink-900" : "text-ink-300"}`}>
         {value ?? "—"}
       </div>
       <div className="mt-0.5 text-xs font-medium text-ink-500">{label}</div>
-    </Link>
+    </>
   );
+  if (active) return <Link href={href} className="card-interactive group card-pad block">{inner}</Link>;
+  return <div className="card card-pad">{inner}</div>;
 }
 
 function QuickAction({
