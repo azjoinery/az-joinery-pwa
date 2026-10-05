@@ -321,7 +321,7 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} />}
+      {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} onGoToOrders={() => setTab("orders")} />}
       {tab === "offcuts" && <OffcutsTab catalogs={catalogs} />}
       {tab === "log" && <LogTab />}
       {tab === "transactions" && withOfficeTabs && <TransactionsTab catalogs={catalogs} />}
@@ -333,7 +333,65 @@ export default function InventoryPage() {
 
 // ---------------------------------------------------------------- Stock ----
 
-function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebuild: boolean }) {
+function LowStockAlert({ items, onGoToOrders, onReload }: {
+  items: StockItem[];
+  onGoToOrders?: () => void;
+  onReload: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState("");
+
+  const handleCreatePo = async () => {
+    setCreating(true);
+    setErr("");
+    try {
+      const lines = items.map(item => ({
+        stockItemId: item.id,
+        description: item.name || "Unnamed",
+        qty: Math.max(1, (item.reorder_point || 1)),
+        unit: item.unit || "pcs",
+        unit_cost: item.unit_cost || 0,
+      }));
+      await api.post("/purchase-orders", {
+        supplier: "",
+        expectedDate: "",
+        notes: "Auto-generated from reorder alert — set supplier before sending",
+        lines,
+      });
+      onReload();
+      onGoToOrders?.();
+    } catch (e: any) {
+      setErr(e?.message || "Couldn't create PO");
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 space-y-3">
+      <div>
+        <h3 className="font-semibold text-amber-900">
+          {items.length} item{items.length > 1 ? "s" : ""} below reorder point
+        </h3>
+        <div className="mt-2 space-y-1">
+          {items.map(item => (
+            <div key={item.id} className="flex items-center justify-between text-sm text-amber-800">
+              <span className="truncate">{item.name || "Unnamed item"}</span>
+              <span className="shrink-0 ml-2 tabular-nums">
+                {item.on_hand_qty} {item.unit} · reorder {item.reorder_point}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <button onClick={handleCreatePo} disabled={creating} className="btn-primary w-full">
+        {creating ? "Creating draft PO…" : `Create draft PO for ${items.length} item${items.length > 1 ? "s" : ""}`}
+      </button>
+    </div>
+  );
+}
+
+function StockTab({ catalogs, canRebuild, onGoToOrders }: { catalogs: Catalogs | null; canRebuild: boolean; onGoToOrders?: () => void }) {
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -608,14 +666,7 @@ function StockTab({ catalogs, canRebuild }: { catalogs: Catalogs | null; canRebu
       )}
 
       {lowStockItems.length > 0 && (
-        <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-          <h3 className="font-semibold text-red-900 mb-2">Low stock alert</h3>
-          {lowStockItems.map((item) => (
-            <div key={item.id} className="text-sm text-red-700 mb-1">
-              {item.name || "Unnamed item"}: {item.on_hand_qty} {item.unit} (Reorder: {item.reorder_point})
-            </div>
-          ))}
-        </div>
+        <LowStockAlert items={lowStockItems} onGoToOrders={onGoToOrders} onReload={loadStocks} />
       )}
 
       {/* Slice 5b: search the stock list */}
