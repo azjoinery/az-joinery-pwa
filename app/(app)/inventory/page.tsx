@@ -181,10 +181,22 @@ export default function InventoryPage() {
   const [tab, setTab] = useState<"stock" | "offcuts" | "log" | "transactions" | "orders" | "suppliers">("stock");
   const [catalogs, setCatalogs] = useState<Catalogs | null>(null);
   const [kpis, setKpis] = useState<StockKpis | null>(null);
+  const [initialOffcutSource, setInitialOffcutSource] = useState<string>("");
 
   useEffect(() => {
     loadCatalogs();
     loadKpis();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    if (t === "offcuts" || t === "stock" || t === "log" || t === "transactions" || t === "orders" || t === "suppliers") {
+      setTab(t);
+    }
+    const src = params.get("source");
+    if (src) setInitialOffcutSource(src);
   }, []);
 
   const loadCatalogs = async () => {
@@ -322,7 +334,7 @@ export default function InventoryPage() {
       </div>
 
       {tab === "stock" && <StockTab catalogs={catalogs} canRebuild={canRebuild} onGoToOrders={() => setTab("orders")} />}
-      {tab === "offcuts" && <OffcutsTab catalogs={catalogs} />}
+      {tab === "offcuts" && <OffcutsTab catalogs={catalogs} initialSource={initialOffcutSource} />}
       {tab === "log" && <LogTab />}
       {tab === "transactions" && withOfficeTabs && <TransactionsTab catalogs={catalogs} />}
       {tab === "orders" && withOfficeTabs && <OrdersTab />}
@@ -1123,7 +1135,7 @@ const STATUS_OFFCUT: Record<string, string> = {
   Used: "badge-neutral",
 };
 
-function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
+function OffcutsTab({ catalogs, initialSource }: { catalogs: Catalogs | null; initialSource?: string }) {
   const [offcuts, setOffcuts] = useState<Offcut[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1151,6 +1163,14 @@ function OffcutsTab({ catalogs }: { catalogs: Catalogs | null }) {
   });
 
   useEffect(() => { loadOffcuts(); }, []);
+
+  // Pre-fill from URL param (e.g. deep-linked from a Job)
+  useEffect(() => {
+    if (initialSource) {
+      setForm(f => ({ ...f, sourceJobNum: initialSource }));
+      setShowForm(true);
+    }
+  }, [initialSource]);
 
   const loadOffcuts = async () => {
     setLoading(true);

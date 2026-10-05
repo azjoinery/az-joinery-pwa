@@ -678,6 +678,14 @@ function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMat
               Record Material Used
             </button>
           )}
+          {job.status !== "Done" && (
+            <Link
+              href={`/inventory?tab=offcuts&source=${encodeURIComponent(job.ref)}`}
+              className="btn-secondary w-full text-center"
+            >
+              Log offcut
+            </Link>
+          )}
           {(job.status === "Ready" || job.status === "In Progress") && current && (
             <button className="btn-primary w-full" onClick={() => onStartStage(job)}>
               {job.status === "Ready" ? `Start — ${current.name}` : `Complete — ${activeStg?.name ?? current.name}`}
