@@ -44,7 +44,12 @@ interface BOMItem {
   id: string; material: string; qty: number; unit: string;
   location?: string; status: "confirmed" | "shortage" | "pending";
   shortageQty?: number; poRef?: string; eta?: string;
+  // Stock link + issue tracking (populated when backend returns real data)
+  linked_stock_item_id?: string;
+  qty_issued?: number;
+  materialStatus?: string;
 }
+interface StockOption { id: string; name: string; unit: string; on_hand_qty: number; }
 interface LogEntry { timestamp: string; actor: string; action: string; detail?: string; }
 interface ReleaseListItem { description: string; quantity: number; unit?: string; category?: string; }
 interface Job {
@@ -261,7 +266,20 @@ function normaliseJob(raw: any): Job {
     assignedTo:  raw.assignedTo ?? undefined,
     dueDate:     raw.dueDate || raw.designDueDate || undefined,
     stages:      Array.isArray(raw.stages) ? raw.stages : [],
-    bom:         Array.isArray(raw.bom) ? raw.bom : [],
+    bom:         Array.isArray(raw.bom) ? raw.bom.map((b: any) => ({
+      id: b.id ?? "",
+      material: b.material ?? b.name ?? "",
+      qty: Number(b.qty ?? b.requiredQty ?? 0),
+      unit: b.unit ?? "",
+      location: b.location,
+      status: b.status ?? "pending",
+      shortageQty: b.shortageQty,
+      poRef: b.poRef,
+      eta: b.eta,
+      linked_stock_item_id: b.linked_stock_item_id || b.stockItemId || undefined,
+      qty_issued: Number(b.qty_issued ?? 0),
+      materialStatus: b.materialStatus,
+    })) : [],
     activityLog: Array.isArray(raw.activityLog) ? raw.activityLog : [],
     blockReason: raw.blockReason || raw.blockedReason || undefined,
     blockDetail: raw.blockDetail || undefined,
@@ -550,10 +568,211 @@ function RecordMaterialSheet({ open, onClose, bom, onSubmit }: {
 
 // ─── Job Detail Sheet ─────────────────────────────────────────────────────────
 
-function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMaterial }: {
+// Materials line with +/- stock issue controls and link-to-stock picker.
+function BOMLine({ item, jobId, stocks, onChanged }: {
+  item: BOMItem;
+  jobId: string;
+  stocks: StockOption[];
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const linkedStock = item.linked_stock_item_id
+    ? stocks.find(s => s.id === item.linked_stock_item_id) : null;
+  const issued = Number(item.qty_issued || 0);
+  const needed = Number(item.qty || 0);
+  const fullyIssued = issued >= needed && needed > 0;
+  const onHand = linkedStock?.on_hand_qty ?? 0;
+
+  const callIssue = async (allowNegative = false) => {
+    setBusy(true); setErr(null);
+    try {
+      await api.post(`/jobs/${jobId}/materials/${item.id}/issue`, {
+        qty: 1, allow_negative: allowNegative,
+      });
+      onChanged();
+    } catch (e: any) {
+      // Catch "would_go_negative" and offer override.
+      const msg = (e?.message || "").toLowerCase();
+      if (msg.includes("would_go_negative") || msg.includes("409")) {
+        if (confirm(`Only ${onHand} ${item.unit} on hand. Issue anyway and go negative?`)) {
+          return callIssue(true);
+        }
+      } else {
+        setErr("Couldn't issue — try again");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const callUndo = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await api.post(`/jobs/${jobId}/materials/${item.id}/issue/undo`, { qty: 1 });
+      onChanged();
+    } catch {
+      setErr("Couldn't undo");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const callLink = async (stockItemId: string) => {
+    setBusy(true); setErr(null);
+    try {
+      await api.patch(`/jobs/${jobId}/materials/${item.id}/link`, { stockItemId });
+      setPickerOpen(false);
+      onChanged();
+    } catch {
+      setErr("Couldn't link");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 border-b border-ink-100 last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium text-ink-900">{item.material}</p>
+            {linkedStock && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Linked
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-ink-500">Needed: {needed} {item.unit}</p>
+        </div>
+        {linkedStock ? (
+          fullyIssued ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-[11px] font-semibold text-green-700 whitespace-nowrap">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              {issued}/{needed} issued
+            </span>
+          ) : (
+            <div className="flex items-stretch rounded-lg border border-ink-200 bg-white overflow-hidden shrink-0">
+              <button
+                type="button"
+                onClick={callUndo}
+                disabled={busy || issued <= 0}
+                className="px-3 py-1 text-lg leading-none text-ink-500 disabled:text-ink-300 hover:bg-ink-50"
+                aria-label="Undo one issue"
+              >−</button>
+              <span className="px-2 py-1 text-xs font-medium border-l border-r border-ink-200 min-w-[48px] text-center tabular">
+                {issued}/{needed}
+              </span>
+              <button
+                type="button"
+                onClick={() => callIssue(false)}
+                disabled={busy}
+                className="px-3 py-1 text-lg leading-none font-bold text-brand-orange disabled:opacity-50 hover:bg-orange-50"
+                aria-label="Issue one from stock"
+              >+</button>
+            </div>
+          )
+        ) : (
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            disabled={busy}
+            className="shrink-0 inline-flex items-center gap-1 rounded-md border border-ink-300 bg-white px-2 py-1 text-[11px] font-medium text-ink-600 hover:bg-ink-50"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1 1"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1-1"/></svg>
+            Link to stock
+          </button>
+        )}
+      </div>
+      {linkedStock && (
+        <p className={`text-[11px] ${onHand === 0 ? "text-danger" : onHand < needed - issued ? "text-warning-dark" : "text-ink-500"}`}>
+          {onHand} {linkedStock.unit} on hand
+          {onHand < needed - issued && onHand > 0 && ` · + caps at ${onHand}`}
+          {onHand === 0 && ` · Out of stock`}
+        </p>
+      )}
+      {!linkedStock && (
+        <p className="text-[11px] text-warning-dark">Not linked — tap &ldquo;Link to stock&rdquo; to enable +/−</p>
+      )}
+      {err && <p className="text-[11px] text-danger">{err}</p>}
+
+      {pickerOpen && (
+        <StockPickerSheet
+          query={item.material}
+          stocks={stocks}
+          onClose={() => setPickerOpen(false)}
+          onPick={callLink}
+        />
+      )}
+    </div>
+  );
+}
+
+function StockPickerSheet({ query, stocks, onClose, onPick }: {
+  query: string;
+  stocks: StockOption[];
+  onClose: () => void;
+  onPick: (stockItemId: string) => void;
+}) {
+  const [search, setSearch] = useState(query);
+  const filtered = stocks
+    .filter(s => s.name?.toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 20);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-2xl bg-white p-4 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-heading text-base font-semibold">Link to stock item</h3>
+          <button onClick={onClose} className="text-ink-400">✕</button>
+        </div>
+        <input
+          type="text"
+          className="input mb-2"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search catalog…"
+          autoFocus
+        />
+        <div className="overflow-y-auto flex-1 -mx-4 px-4">
+          {filtered.length === 0 && (
+            <p className="text-xs text-ink-400 py-6 text-center">No stock items match &ldquo;{search}&rdquo;</p>
+          )}
+          {filtered.map(s => (
+            <button
+              key={s.id}
+              onClick={() => onPick(s.id)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-ink-50 rounded-md"
+            >
+              <span className="font-medium text-ink-900">{s.name}</span>
+              <span className="text-xs text-ink-400">{s.on_hand_qty} {s.unit}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMaterial, onJobChanged }: {
   job: Job | null; open: boolean; onClose: () => void;
   onBlock: (j: Job) => void; onStartStage: (j: Job) => void; onRecordMaterial: (j: Job) => void;
+  onJobChanged?: () => void;
 }) {
+  const [stocks, setStocks] = useState<StockOption[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const data = await api.get<any[]>("/stock/items?active=true");
+        setStocks((data || []).map(s => ({
+          id: s.id, name: s.name || "", unit: s.unit || "", on_hand_qty: Number(s.on_hand_qty || 0),
+        })));
+      } catch { /* non-fatal */ }
+    })();
+  }, [open]);
+
   if (!job) return null;
   const prog        = stageProgress(job);
   const current     = activeStage(job);
@@ -595,29 +814,19 @@ function JobDetailSheet({ job, open, onClose, onBlock, onStartStage, onRecordMat
           </div>
         )}
 
-        {/* BOM */}
+        {/* BOM with stock-link + issue controls */}
         {job.bom.length > 0 && (
           <div>
             <p className="eyebrow mb-2.5">Materials (BOM)</p>
             <div className="card overflow-hidden">
-              {job.bom.map((item, i) => (
-                <div key={item.id} className={`flex items-start gap-3 px-4 py-3 ${i < job.bom.length - 1 ? "border-b border-ink-100" : ""}`}>
-                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                    item.status === "confirmed" ? "bg-success" : item.status === "shortage" ? "bg-danger" : "bg-ink-300"
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-ink-900">{item.material}</p>
-                    <p className="text-xs text-ink-500">{item.qty} {item.unit}</p>
-                    {item.status === "confirmed" && item.location && (
-                      <p className="text-xs text-success-dark mt-0.5">📍 {item.location}</p>
-                    )}
-                    {item.status === "shortage" && (
-                      <p className="text-xs text-danger-dark mt-0.5">
-                        Short {item.shortageQty} {item.unit} · {item.poRef} ETA {item.eta}
-                      </p>
-                    )}
-                  </div>
-                </div>
+              {job.bom.map((item) => (
+                <BOMLine
+                  key={item.id}
+                  item={item}
+                  jobId={job.id}
+                  stocks={stocks}
+                  onChanged={() => onJobChanged?.()}
+                />
               ))}
             </div>
           </div>
@@ -721,18 +930,23 @@ function CabinetmakerView({ userId }: { userId: string }) {
   const [blockOpen, setBlockOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
 
+  const reload = async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await api.get<any[]>("/jobs");
+      const released = (raw || [])
+        .filter((j: any) => j.releaseStatus === "Released")
+        .map(normaliseJob);
+      setJobs(released);
+      // Keep the open sheet in sync with the freshly-loaded job.
+      setSelectedJob(prev => prev ? (released.find(j => j.id === prev.id) || prev) : prev);
+    } catch { setJobs([]); }
+  };
+
   useEffect(() => {
     (async () => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = await api.get<any[]>("/jobs");
-        const released = (raw || [])
-          .filter((j: any) => j.releaseStatus === "Released")
-          .map(normaliseJob);
-        setJobs(released);
-      } catch {
-        setJobs([]);
-      } finally { setLoading(false); }
+      await reload();
+      setLoading(false);
     })();
   }, [userId]);
 
@@ -885,6 +1099,7 @@ function CabinetmakerView({ userId }: { userId: string }) {
         onBlock={j => { setSelectedJob(j); setDetailOpen(false); setBlockOpen(true); }}
         onStartStage={handleStartStage}
         onRecordMaterial={j => { setSelectedJob(j); setDetailOpen(false); setRecordOpen(true); }}
+        onJobChanged={reload}
       />
       <BlockJobSheet
         open={blockOpen} onClose={() => setBlockOpen(false)}
@@ -914,6 +1129,16 @@ function SupervisorView() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editJob, setEditJob] = useState<Job | null>(null);
   const [editForm, setEditForm] = useState({ status: "", priority: "", dueDate: "", notes: "" });
+
+  const reloadJobs = async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await api.get<any[]>("/jobs");
+      const next = (raw || []).map(normaliseJob);
+      setJobs(next);
+      setDetailJob(prev => prev ? (next.find(j => j.id === prev.id) || prev) : prev);
+    } catch { /* non-fatal */ }
+  };
 
   useEffect(() => {
     (async () => {
@@ -1183,6 +1408,7 @@ function SupervisorView() {
         onBlock={(j) => { setDetailJob(null); setDetailOpen(false); setBlockJob(j); }}
         onStartStage={(j) => { setDetailOpen(false); handleStartStage(j); }}
         onRecordMaterial={(j) => { setDetailOpen(false); handleRecordMaterial(j); }}
+        onJobChanged={reloadJobs}
       />
 
       <RecordMaterialSheet
