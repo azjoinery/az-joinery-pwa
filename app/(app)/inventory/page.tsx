@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/store/auth";
 
@@ -1494,6 +1494,176 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
 
 // --------------------------------------------------------- Purchase Orders --
 
+interface POLineForm {
+  stockItemId?: string;
+  newItemName?: string;   // set when user picks "Create new" — stock item created on save
+  description: string;
+  qty: number;
+  unit: string;
+  unitCost: number;
+  jobNum?: string;
+}
+
+const BLANK_LINE: POLineForm = { description: "", qty: 1, unit: "Sheet", unitCost: 0 };
+
+function POLineEditor({
+  line, index, stocks, onUpdate, onRemove, canRemove,
+}: {
+  line: POLineForm; index: number; stocks: StockItem[];
+  onUpdate: (patch: Partial<POLineForm>) => void;
+  onRemove: () => void; canRemove: boolean;
+}) {
+  const [search, setSearch] = useState(line.newItemName || (line.stockItemId ? (stocks.find(s => s.id === line.stockItemId)?.name ?? "") : ""));
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const linked = line.stockItemId ? stocks.find(s => s.id === line.stockItemId) : null;
+  const filtered = stocks.filter(s => s.name?.toLowerCase().includes(search.toLowerCase())).slice(0, 10);
+  const showCreate = search.trim().length > 0 && !filtered.some(s => s.name?.toLowerCase() === search.trim().toLowerCase());
+
+  const selectItem = (s: StockItem) => {
+    onUpdate({
+      stockItemId: s.id,
+      newItemName: undefined,
+      description: s.name || "",
+      unit: s.unit || "Sheet",
+      unitCost: s.unit_cost || 0,
+    });
+    setSearch(s.name || "");
+    setOpen(false);
+  };
+
+  const selectNew = () => {
+    onUpdate({
+      stockItemId: undefined,
+      newItemName: search.trim(),
+      description: search.trim(),
+      unit: "Sheet",
+      unitCost: 0,
+    });
+    setOpen(false);
+  };
+
+  const clear = () => {
+    onUpdate({ stockItemId: undefined, newItemName: undefined, description: "" });
+    setSearch("");
+    setOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  return (
+    <div className="card card-pad space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Line {index + 1}</span>
+        <div className="flex items-center gap-3">
+          {linked && (
+            <span className="flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Linked to stock
+            </span>
+          )}
+          {line.newItemName && !line.stockItemId && (
+            <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              New item — added to catalog on save
+            </span>
+          )}
+          {canRemove && (
+            <button onClick={onRemove} className="text-[11px] text-red-500 hover:text-red-700">Remove</button>
+          )}
+        </div>
+      </div>
+
+      {/* Stock item picker */}
+      <div>
+        <label className="label">Stock item <span className="text-red-500">*</span></label>
+        {linked || line.newItemName ? (
+          <div className="flex items-center gap-2">
+            <div className="input flex-1 bg-ink-50 text-ink-700 text-sm truncate">
+              {linked?.name ?? line.newItemName}
+            </div>
+            <button onClick={clear} className="shrink-0 text-xs text-ink-400 hover:text-ink-700">Change</button>
+          </div>
+        ) : (
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              className="input"
+              placeholder="Search catalog or type new item name…"
+              value={search}
+              autoComplete="off"
+              onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+              onFocus={() => setOpen(true)}
+              onBlur={() => setTimeout(() => setOpen(false), 150)}
+            />
+            {open && (search.trim().length > 0 || filtered.length > 0) && (
+              <div className="absolute z-20 mt-1 w-full rounded-lg border border-ink-200 bg-white shadow-lg overflow-hidden">
+                {filtered.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onMouseDown={() => selectItem(s)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-ink-50"
+                  >
+                    <span className="font-medium text-ink-900">{s.name}</span>
+                    <span className="text-xs text-ink-400">{s.on_hand_qty} {s.unit} on hand</span>
+                  </button>
+                ))}
+                {showCreate && (
+                  <button
+                    type="button"
+                    onMouseDown={selectNew}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-brand-orange hover:bg-orange-50 border-t border-ink-100"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add &ldquo;{search.trim()}&rdquo; to catalog
+                  </button>
+                )}
+                {filtered.length === 0 && !showCreate && (
+                  <div className="px-3 py-2 text-xs text-ink-400">Type to search…</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {linked && (
+          <p className="mt-1 text-[11px] text-ink-400">
+            On hand: {linked.on_hand_qty} {linked.unit} · Reorder at: {linked.reorder_point}
+          </p>
+        )}
+      </div>
+
+      {/* Qty / Unit / Cost */}
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="label">Qty</label>
+          <input type="number" className="input" min={1} value={line.qty}
+            onChange={(e) => onUpdate({ qty: parseFloat(e.target.value) || 1 })} />
+        </div>
+        <div>
+          <label className="label">Unit</label>
+          <input type="text" className="input" value={line.unit}
+            onChange={(e) => onUpdate({ unit: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Unit cost ($)</label>
+          <input type="number" className="input" min={0} step={0.01} value={line.unitCost}
+            onChange={(e) => onUpdate({ unitCost: parseFloat(e.target.value) || 0 })} />
+        </div>
+      </div>
+
+      {/* Job attribution */}
+      <div>
+        <label className="label">For job <span className="font-normal text-ink-400">(optional)</span></label>
+        <input type="text" className="input" placeholder="Job # e.g. 0047"
+          value={line.jobNum || ""}
+          onChange={(e) => onUpdate({ jobNum: e.target.value })} />
+      </div>
+    </div>
+  );
+}
+
 function OrdersTab() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [stocks, setStocks] = useState<StockItem[]>([]);
@@ -1505,11 +1675,10 @@ function OrdersTab() {
 
   const [supplier, setSupplier] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
-  const [lines, setLines] = useState<POLine[]>([{ description: "", qty: 1, unitCost: 0 }]);
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState<POLineForm[]>([{ ...BLANK_LINE }]);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const load = async () => {
     setLoading(true);
@@ -1520,30 +1689,63 @@ function OrdersTab() {
       ]);
       setOrders(poData || []);
       setStocks(stockData || []);
-    } catch (err) {
+    } catch {
       // non-fatal
     } finally {
       setLoading(false);
     }
   };
 
-  const addLine = () => setLines([...lines, { description: "", qty: 1, unitCost: 0 }]);
-  const updateLine = (i: number, patch: Partial<POLine>) => setLines(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
+  const updateLine = (i: number, patch: Partial<POLineForm>) =>
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  const removeLine = (i: number) => setLines(prev => prev.filter((_, idx) => idx !== i));
+  const addLine = () => setLines(prev => [...prev, { ...BLANK_LINE }]);
+
+  const resetForm = () => {
+    setSupplier(""); setExpectedDate(""); setNotes("");
+    setLines([{ ...BLANK_LINE }]); setShowForm(false);
+  };
+
+  const canSave = supplier.trim().length > 0 &&
+    lines.every(l => (l.stockItemId || l.newItemName) && l.qty > 0);
 
   const createPO = async () => {
-    if (!supplier.trim() || lines.some((l) => !l.description.trim())) return;
+    if (!canSave) return;
     setSaving(true);
     setSaveError(null);
     try {
-      await api.post("/purchase-orders", { supplier, expectedDate, lines });
-      setSupplier("");
-      setExpectedDate("");
-      setLines([{ description: "", qty: 1, unitCost: 0 }]);
-      setShowForm(false);
+      // For any line marked as new item, create the stock item first
+      const resolvedLines = await Promise.all(lines.map(async (l) => {
+        if (l.newItemName && !l.stockItemId) {
+          const created = await api.post<StockItem>("/stock/items", {
+            name: l.newItemName,
+            unit: l.unit || "Sheet",
+            unit_cost: l.unitCost || 0,
+            on_hand_qty: 0,
+            stockType: "sheet",
+            category: "",
+          });
+          return { ...l, stockItemId: created.id, newItemName: undefined };
+        }
+        return l;
+      }));
+
+      const payload = {
+        supplier, expectedDate, notes,
+        lines: resolvedLines.map(l => ({
+          stockItemId: l.stockItemId,
+          description: l.description || l.newItemName || "",
+          qty: l.qty,
+          unit: l.unit,
+          unitCost: l.unitCost,
+          jobNum: l.jobNum || "",
+        })),
+      };
+      await api.post("/purchase-orders", payload);
+      resetForm();
       load();
-    } catch (err) {
-      setSaveError("Couldn't create this purchase order — check the details and try again.");
+    } catch {
+      setSaveError("Couldn't save this purchase order — check your connection and try again.");
     } finally {
       setSaving(false);
     }
@@ -1555,6 +1757,7 @@ function OrdersTab() {
     return (
       <POrderDetail
         po={selected}
+        stocks={stocks}
         onBack={() => setSelectedId(null)}
         onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? u : o)))}
         onDeleted={(id) => { setOrders((prev) => prev.filter((o) => o.id !== id)); setSelectedId(null); }}
@@ -1565,70 +1768,87 @@ function OrdersTab() {
   return (
     <div className="space-y-4">
       <button onClick={() => setShowForm(!showForm)} className="btn-primary w-full">
-        + Create Purchase Order
+        {showForm ? "Cancel" : "+ Create Purchase Order"}
       </button>
 
       {showForm && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-          <input type="text" placeholder="Supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-          <input type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-          <div className="space-y-2">
-            <p className="text-xs text-gray-500">Line items</p>
-            <p className="text-xs text-gray-400">Link a line to a stock item so Receive Goods can update on-hand quantity and cost automatically. Leave as "Ad-hoc" for one-off items not tracked in Stock.</p>
-            {lines.map((line, i) => (
-              <div key={i} className="grid grid-cols-12 gap-1 items-center">
-                <select value={line.stockItemId || ""}
-                  onChange={(e) => {
-                    const item = stocks.find((s) => s.id === e.target.value);
-                    updateLine(i, {
-                      stockItemId: e.target.value || undefined,
-                      description: item && !line.description.trim() ? (item.name || "(unnamed item)") : line.description,
-                      unitCost: item && !line.unitCost ? (item.unit_cost || 0) : line.unitCost,
-                    });
-                  }}
-                  className="col-span-3 px-2 py-1.5 text-sm border border-gray-300 rounded">
-                  <option value="">Ad-hoc (no stock link)</option>
-                  {stocks.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name || "(unnamed item)"}</option>
-                  ))}
-                </select>
-                <input type="text" placeholder="Description" value={line.description}
-                  onChange={(e) => updateLine(i, { description: e.target.value })}
-                  className="col-span-4 px-2 py-1.5 text-sm border border-gray-300 rounded" />
-                <input type="number" placeholder="Qty" value={line.qty}
-                  onChange={(e) => updateLine(i, { qty: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2 px-2 py-1.5 text-sm border border-gray-300 rounded" />
-                <input type="number" placeholder="Cost" value={line.unitCost}
-                  onChange={(e) => updateLine(i, { unitCost: parseFloat(e.target.value) || 0 })}
-                  className="col-span-2 px-2 py-1.5 text-sm border border-gray-300 rounded" />
-                <button onClick={() => removeLine(i)} className="col-span-1 text-red-500 text-xs">✕</button>
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="card card-pad space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Order details</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Supplier <span className="text-red-500">*</span></label>
+                <input type="text" className="input" placeholder="e.g. Laminex, Big River"
+                  value={supplier} onChange={(e) => setSupplier(e.target.value)} />
               </div>
-            ))}
-            <button onClick={addLine} className="text-xs text-orange-600 hover:text-orange-800">+ Add line</button>
+              <div>
+                <label className="label">Expected delivery</label>
+                <input type="date" className="input" value={expectedDate}
+                  onChange={(e) => setExpectedDate(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className="label">Notes</label>
+              <input type="text" className="input" placeholder="Delivery instructions, reference numbers…"
+                value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
           </div>
+
+          {/* Lines */}
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400 px-1">Line items</p>
+          {lines.map((line, i) => (
+            <POLineEditor
+              key={i}
+              line={line}
+              index={i}
+              stocks={stocks}
+              onUpdate={(patch) => updateLine(i, patch)}
+              onRemove={() => removeLine(i)}
+              canRemove={lines.length > 1}
+            />
+          ))}
+
+          <button onClick={addLine} className="flex items-center gap-2 text-sm font-medium text-brand-orange hover:text-orange-700">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add line
+          </button>
+
           {saveError && <div className="alert-danger">{saveError}</div>}
-          <button onClick={createPO} disabled={saving || !supplier.trim()} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
-            {saving ? "Creating..." : "Create Purchase Order"}
+
+          {!canSave && supplier.trim() && (
+            <p className="text-xs text-amber-600">Each line needs a stock item selected before saving.</p>
+          )}
+
+          <button onClick={createPO} disabled={saving || !canSave} className="btn-primary w-full">
+            {saving ? "Saving…" : "Save purchase order"}
           </button>
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-8 text-gray-600">Loading purchase orders...</div>
+        <div className="flex flex-col gap-3">{[1,2].map(i => <div key={i} className="skeleton h-20 rounded-card"/>)}</div>
       ) : orders.length === 0 ? (
-        <div className="text-center py-8 text-gray-600">No purchase orders yet</div>
+        <div className="empty mt-4">
+          <p className="empty-title">No purchase orders</p>
+          <p className="empty-body">Tap + Create Purchase Order to start.</p>
+        </div>
       ) : (
         <div className="space-y-2">
           {orders.map((po) => (
-            <button key={po.id} onClick={() => setSelectedId(po.id)} className="w-full text-left bg-white p-4 rounded-lg border border-gray-200 hover:border-orange-300">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="font-semibold text-gray-900">{po.poNumber}</span>
-                  <p className="page-subtitle">{po.supplier}</p>
+            <button key={po.id} onClick={() => setSelectedId(po.id)}
+              className="card card-interactive w-full text-left card-pad">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink-900">{po.poNumber}</p>
+                  <p className="text-xs text-ink-500">{po.supplier}</p>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS_COLORS[po.status] || "bg-gray-100"}`}>{po.status}</span>
+                <span className={`badge shrink-0 ${STATUS_COLORS[po.status] || "badge-neutral"}`}>{po.status}</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">{po.lines.length} line{po.lines.length === 1 ? "" : "s"}</p>
+              <p className="mt-1 text-[11px] text-ink-400">
+                {po.lines.length} line{po.lines.length === 1 ? "" : "s"}
+                {po.expectedDate ? ` · Expected ${po.expectedDate}` : ""}
+              </p>
             </button>
           ))}
         </div>
@@ -1637,7 +1857,10 @@ function OrdersTab() {
   );
 }
 
-function POrderDetail({ po, onBack, onUpdated, onDeleted }: { po: PurchaseOrder; onBack: () => void; onUpdated: (p: PurchaseOrder) => void; onDeleted: (id: string) => void }) {
+function POrderDetail({ po, stocks, onBack, onUpdated, onDeleted }: {
+  po: PurchaseOrder; stocks: StockItem[];
+  onBack: () => void; onUpdated: (p: PurchaseOrder) => void; onDeleted: (id: string) => void;
+}) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [showReceive, setShowReceive] = useState(false);
@@ -1646,121 +1869,164 @@ function POrderDetail({ po, onBack, onUpdated, onDeleted }: { po: PurchaseOrder;
   const [receiveError, setReceiveError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const canReceive = !["cancelled", "received", "closed"].includes(po.status);
+  const pendingLines = po.lines.filter((l) => (l.qtyReceived ?? 0) < l.qty);
+
   const deletePO = async () => {
-    if (!window.confirm("Delete this purchase order permanently? This cannot be undone.")) return;
+    if (!window.confirm("Delete this purchase order permanently?")) return;
     setDeleting(true);
-    try {
-      await api.delete(`/purchase-orders/${po.id}`);
-      onDeleted(po.id);
-    } catch {
-      setDeleting(false);
-    }
+    try { await api.delete(`/purchase-orders/${po.id}`); onDeleted(po.id); }
+    catch { setDeleting(false); }
   };
 
   const changeStatus = async (status: string) => {
-    setStatusSaving(true);
-    setStatusError(null);
+    setStatusSaving(true); setStatusError(null);
     try {
       const updated = await api.patch<PurchaseOrder>(`/purchase-orders/${po.id}`, { status });
       onUpdated(updated);
-    } catch (err) {
-      setStatusError("Couldn't change this order's status — check your connection and try again.");
-    } finally {
-      setStatusSaving(false);
-    }
+    } catch { setStatusError("Couldn't update status — try again."); }
+    finally { setStatusSaving(false); }
   };
 
   const submitReceive = async () => {
-    const lines = po.lines
+    const lines = pendingLines
       .filter((l) => (receiveLines[l.id || ""] || 0) > 0)
       .map((l) => ({ lineId: l.id, qtyReceived: receiveLines[l.id || ""] }));
     if (lines.length === 0) return;
-    setReceiveSaving(true);
-    setReceiveError(null);
+    setReceiveSaving(true); setReceiveError(null);
     try {
       await api.post(`/purchase-orders/${po.id}/receive`, { lines });
       const refreshed = await api.get<PurchaseOrder[]>("/purchase-orders");
       const match = refreshed.find((o) => o.id === po.id);
       if (match) onUpdated(match);
       setShowReceive(false);
-    } catch (err) {
-      setReceiveError("Couldn't record this receipt — check the quantities and try again.");
-    } finally {
-      setReceiveSaving(false);
-    }
+      setReceiveLines({});
+    } catch { setReceiveError("Couldn't record receipt — check quantities and try again."); }
+    finally { setReceiveSaving(false); }
   };
+
+  const totalValue = po.lines.reduce((s, l) => s + l.qty * (l.unitCost || 0), 0);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <button onClick={onBack} className="text-sm text-orange-600 font-medium">← Back to purchase orders</button>
+      <div className="flex items-center justify-between">
+        <button onClick={onBack} className="text-sm font-medium text-brand-orange">← Orders</button>
         <button onClick={deletePO} disabled={deleting} className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40">
-          {deleting ? "Deleting…" : "Delete order"}
+          {deleting ? "Deleting…" : "Delete"}
         </button>
       </div>
 
+      {/* PO header */}
       <div className="card card-pad">
-        <div className="flex justify-between items-start mb-2">
+        <div className="flex items-start justify-between gap-2 mb-3">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{po.poNumber}</h2>
-            <p className="page-subtitle">{po.supplier}</p>
+            <p className="font-semibold text-ink-900">{po.poNumber}</p>
+            <p className="text-sm text-ink-500">{po.supplier}</p>
           </div>
-          <span className={`text-xs px-2 py-1 rounded font-medium ${STATUS_COLORS[po.status] || "bg-gray-100"}`}>{po.status}</span>
+          <span className={`badge shrink-0 ${STATUS_COLORS[po.status] || "badge-neutral"}`}>{po.status}</span>
         </div>
-        {po.expectedDate && <p className="text-xs text-gray-500">Expected: {po.expectedDate}</p>}
+        {po.expectedDate && <p className="text-xs text-ink-400 mb-3">Expected {po.expectedDate}</p>}
 
-        <div className="mt-3 space-y-1">
-          {po.lines.map((l) => (
-            <div key={l.id} className="flex justify-between text-sm border-t border-gray-100 pt-1">
-              <span className="text-gray-900">
-                {l.description}
-                {!l.stockItemId && (
-                <span className="ml-1 text-xs text-amber-600">
-                 {l.jobId ? "(will create inventory item on receipt)" : "(ad-hoc — won't update stock)"}
-                  </span>
-              )}
-              </span>
-              <span className="text-gray-600">{l.qtyReceived ?? 0}/{l.qty} {l.unit}</span>
-            </div>
-          ))}
+        {/* Lines */}
+        <div className="divide-y divide-ink-100">
+          {po.lines.map((l) => {
+            const stockItem = stocks.find(s => s.id === l.stockItemId);
+            const received = l.qtyReceived ?? 0;
+            const outstanding = l.qty - received;
+            return (
+              <div key={l.id} className="py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink-900 truncate">{l.description}</p>
+                    {stockItem && <p className="text-[11px] text-ink-400">Stock: {stockItem.on_hand_qty} {stockItem.unit} on hand</p>}
+                    {!l.stockItemId && (
+                      <p className="text-[11px] text-amber-600">Not linked to stock — receiving won&apos;t update inventory</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm text-ink-700">{received}/{l.qty} {l.unit}</p>
+                    {outstanding > 0 && received > 0 && (
+                      <p className="text-[11px] text-amber-600">{outstanding} outstanding</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {statusError && <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{statusError}</div>}
+        <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-2">
+          <span className="text-xs text-ink-400">{po.lines.length} line{po.lines.length === 1 ? "" : "s"}</span>
+          <span className="text-sm font-medium text-ink-700">Total ${totalValue.toFixed(2)}</span>
+        </div>
 
-        <div className="flex gap-2 mt-3 flex-wrap">
+        {statusError && <div className="mt-2 alert-danger">{statusError}</div>}
+
+        {/* Action buttons */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canReceive && pendingLines.length > 0 && (
+            <button
+              onClick={() => { setShowReceive(!showReceive); setReceiveLines({}); }}
+              className="btn-primary flex-1"
+            >
+              {showReceive ? "Cancel receive" : "Receive goods"}
+            </button>
+          )}
           {po.status === "draft" && (
-            <button onClick={() => changeStatus("sent")} disabled={statusSaving} className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">Mark Sent</button>
+            <button onClick={() => changeStatus("sent")} disabled={statusSaving}
+              className="flex-1 rounded-lg border border-ink-200 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50">
+              Mark sent
+            </button>
           )}
           {(po.status === "sent" || po.status === "draft") && (
-            <button onClick={() => changeStatus("confirmed")} disabled={statusSaving} className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded hover:bg-purple-600">Mark Confirmed</button>
+            <button onClick={() => changeStatus("confirmed")} disabled={statusSaving}
+              className="flex-1 rounded-lg border border-ink-200 py-2 text-sm font-medium text-ink-700 hover:bg-ink-50">
+              Mark confirmed
+            </button>
           )}
-          {(po.status === "confirmed" || po.status === "partial") && (
-            <button onClick={() => { setShowReceive(!showReceive); setReceiveLines({}); }} className="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600">Receive Goods</button>
-          )}
-          {po.status !== "cancelled" && po.status !== "received" && po.status !== "closed" && (
-            <button onClick={() => changeStatus("cancelled")} disabled={statusSaving} className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">Cancel</button>
+          {canReceive && (
+            <button onClick={() => changeStatus("cancelled")} disabled={statusSaving}
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">
+              Cancel
+            </button>
           )}
         </div>
       </div>
 
+      {/* Receive panel */}
       {showReceive && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
-          <p className="text-sm font-semibold text-gray-900">Record Goods Receipt</p>
-          {po.lines.filter((l) => (l.qtyReceived ?? 0) < l.qty).map((l) => (
-            <div key={l.id} className="flex items-center gap-2">
-              <span className="text-sm text-gray-700 flex-1">{l.description} (outstanding {(l.qty - (l.qtyReceived ?? 0)).toFixed(2)})</span>
-              <input
-                type="number"
-                placeholder="Qty received"
-                value={receiveLines[l.id || ""] || ""}
-                onChange={(e) => setReceiveLines({ ...receiveLines, [l.id || ""]: parseFloat(e.target.value) || 0 })}
-                className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded"
-              />
-            </div>
-          ))}
+        <div className="card card-pad space-y-3">
+          <p className="text-sm font-semibold text-ink-900">Record goods received</p>
+          <p className="text-xs text-ink-400">Enter the qty you physically received for each line. Stock updates immediately.</p>
+
+          {pendingLines.map((l) => {
+            const outstanding = l.qty - (l.qtyReceived ?? 0);
+            return (
+              <div key={l.id} className="flex items-center gap-3 rounded-lg bg-ink-50 px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink-900 truncate">{l.description}</p>
+                  <p className="text-[11px] text-ink-400">Outstanding: {outstanding.toFixed(0)} {l.unit}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <input
+                    type="number"
+                    min={0}
+                    max={outstanding}
+                    placeholder="0"
+                    value={receiveLines[l.id || ""] || ""}
+                    onChange={(e) => setReceiveLines({ ...receiveLines, [l.id || ""]: parseFloat(e.target.value) || 0 })}
+                    className="input w-20 text-center"
+                  />
+                  <span className="text-xs text-ink-400">{l.unit}</span>
+                </div>
+              </div>
+            );
+          })}
+
           {receiveError && <div className="alert-danger">{receiveError}</div>}
-          <button onClick={submitReceive} disabled={receiveSaving} className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400">
-            {receiveSaving ? "Saving..." : "Confirm Receipt"}
+
+          <button onClick={submitReceive} disabled={receiveSaving} className="btn-primary w-full">
+            {receiveSaving ? "Updating stock…" : "Confirm receipt"}
           </button>
         </div>
       )}
