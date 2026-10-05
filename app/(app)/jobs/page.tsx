@@ -585,7 +585,7 @@ function BOMLine({ item, jobId, stocks, onChanged }: {
   const fullyIssued = issued >= needed && needed > 0;
   const onHand = linkedStock?.on_hand_qty ?? 0;
 
-  const callIssue = async (allowNegative = false) => {
+  const callIssue = async (allowNegative = false): Promise<void> => {
     setBusy(true); setErr(null);
     try {
       await api.post(`/jobs/${jobId}/materials/${item.id}/issue`, {
