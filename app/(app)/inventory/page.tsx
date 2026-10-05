@@ -1753,7 +1753,7 @@ function POLineEditor({
             <input
               ref={inputRef}
               type="text"
-              className="input"
+              className={`input ${!search.trim() ? "ring-1 ring-red-300 focus:ring-red-500" : ""}`}
               placeholder="Search catalog or type new item name…"
               value={search}
               autoComplete="off"
@@ -2026,9 +2026,21 @@ function OrdersTab() {
 
           {saveError && <div className="alert-danger">{saveError}</div>}
 
-          {!canSave && supplier.trim() && (
-            <p className="text-xs text-amber-600">Each line needs a stock item selected before saving.</p>
-          )}
+          {!canSave && (() => {
+            const missing: string[] = [];
+            if (!supplier.trim()) missing.push("Supplier");
+            const emptyLines = lines
+              .map((l, i) => ({ i, empty: !l.stockItemId && !l.newItemName }))
+              .filter(x => x.empty)
+              .map(x => `Line ${x.i + 1} stock item`);
+            missing.push(...emptyLines);
+            if (lines.some(l => !l.qty || l.qty <= 0)) missing.push("Qty > 0 on every line");
+            return (
+              <p className="text-xs text-amber-600">
+                Fill: {missing.join(" · ")} to enable Save.
+              </p>
+            );
+          })()}
 
           <button onClick={createPO} disabled={saving || !canSave} className="btn-primary w-full">
             {saving ? "Saving…" : "Save purchase order"}
