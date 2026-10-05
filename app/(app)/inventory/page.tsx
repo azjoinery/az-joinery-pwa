@@ -412,6 +412,8 @@ function StockTab({ catalogs, canRebuild, onGoToOrders }: { catalogs: Catalogs |
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rebuildResult, setRebuildResult] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
   const [search, setSearch] = useState("");
 
   const sheetCats = catalogs?.sheetCategories || ["HMR", "MDF", "Plywood", "Particleboard", "Melamine", "Veneer", "Other Sheet"];
@@ -521,6 +523,28 @@ function StockTab({ catalogs, canRebuild, onGoToOrders }: { catalogs: Catalogs |
     }
   };
 
+  const backfillPoStock = async () => {
+    setBackfilling(true);
+    setBackfillResult(null);
+    try {
+      const data = await api.post<{ fixed_lines: number; fixed_items: number; details: any[] }>(
+        `/admin/backfill-po-stock`
+      );
+      if (data.fixed_lines === 0) {
+        setBackfillResult("No past POs to fix — everything is already linked to stock.");
+      } else {
+        setBackfillResult(
+          `Fixed ${data.fixed_lines} line${data.fixed_lines === 1 ? "" : "s"}, created ${data.fixed_items} new stock item${data.fixed_items === 1 ? "" : "s"}.`
+        );
+        loadStocks();
+      }
+    } catch (err) {
+      setBackfillResult("Couldn't run the fix — check your connection and try again.");
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
   const lowStockItems = stocks.filter((s) => s.on_hand_qty <= s.reorder_point);
   const selected = stocks.find((s) => s.id === selectedId) || null;
 
@@ -582,6 +606,22 @@ function StockTab({ catalogs, canRebuild, onGoToOrders }: { catalogs: Catalogs |
             </button>
           </div>
           {rebuildResult && <p className="text-xs text-gray-700">{rebuildResult}</p>}
+        </div>
+      )}
+
+      {canRebuild && (
+        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
+          <p className="text-xs text-gray-600">
+            Admin tool: scan past POs for lines that were received but never added to stock (e.g. missing &quot;Soft Walnut Matt&quot;). Auto-creates catalog items as needed.
+          </p>
+          <button
+            onClick={backfillPoStock}
+            disabled={backfilling}
+            className="w-full py-1.5 text-sm bg-gray-800 text-white rounded hover:bg-gray-900 disabled:opacity-60"
+          >
+            {backfilling ? "Fixing…" : "Fix past POs"}
+          </button>
+          {backfillResult && <p className="text-xs text-gray-700">{backfillResult}</p>}
         </div>
       )}
 
