@@ -1605,9 +1605,37 @@ function TransactionsTab({ catalogs }: { catalogs: Catalogs | null }) {
 
 // --------------------------------------------------------- Purchase Orders --
 
+const PO_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "sheet",      label: "Sheet / Board" },
+  { value: "hardware",   label: "Hardware" },
+  { value: "edging",     label: "Edging" },
+  { value: "consumable", label: "Consumable" },
+  { value: "other",      label: "Other" },
+];
+
+const PO_SHEET_CATS     = ["HMR", "MDF", "Plywood", "Particleboard", "Melamine", "Veneer", "Other Sheet"];
+const PO_HARDWARE_CATS  = ["Hinges", "Hinge Plates", "Drawer Systems", "Push Catches", "Drawer Runners", "Screws", "Brackets", "Shelf Supports", "Handles", "Other Hardware"];
+
+const poCategoriesFor = (t: string): string[] => {
+  if (t === "sheet") return PO_SHEET_CATS;
+  if (t === "hardware") return PO_HARDWARE_CATS;
+  if (t === "edging") return ["Edge tape", "Solid edging", "Other Edging"];
+  if (t === "consumable") return ["Screws", "Glue", "Fasteners", "Abrasives", "Other Consumable"];
+  return ["Other"];
+};
+
+const poDefaultUnit = (t: string): string => {
+  if (t === "sheet") return "Sheet";
+  if (t === "edging") return "Metre";
+  if (t === "consumable") return "Pack";
+  return "Piece";
+};
+
 interface POLineForm {
   stockItemId?: string;
   newItemName?: string;   // set when user picks "Create new" — stock item created on save
+  newItemStockType?: string;
+  newItemCategory?: string;
   description: string;
   qty: number;
   unit: string;
@@ -1626,16 +1654,22 @@ function POLineEditor({
 }) {
   const [search, setSearch] = useState(line.newItemName || (line.stockItemId ? (stocks.find(s => s.id === line.stockItemId)?.name ?? "") : ""));
   const [open, setOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const linked = line.stockItemId ? stocks.find(s => s.id === line.stockItemId) : null;
-  const filtered = stocks.filter(s => s.name?.toLowerCase().includes(search.toLowerCase())).slice(0, 10);
+  const filtered = stocks
+    .filter(s => typeFilter === "all" || (s.stockType || "sheet") === typeFilter)
+    .filter(s => s.name?.toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 10);
   const showCreate = search.trim().length > 0 && !filtered.some(s => s.name?.toLowerCase() === search.trim().toLowerCase());
 
   const selectItem = (s: StockItem) => {
     onUpdate({
       stockItemId: s.id,
       newItemName: undefined,
+      newItemStockType: undefined,
+      newItemCategory: undefined,
       description: s.name || "",
       unit: s.unit || "Sheet",
       unitCost: s.unit_cost || 0,
@@ -1645,18 +1679,37 @@ function POLineEditor({
   };
 
   const selectNew = () => {
+    const defaultType = typeFilter !== "all" ? typeFilter : "sheet";
+    const defaultCat = poCategoriesFor(defaultType)[0] || "";
     onUpdate({
       stockItemId: undefined,
       newItemName: search.trim(),
+      newItemStockType: defaultType,
+      newItemCategory: defaultCat,
       description: search.trim(),
-      unit: "Sheet",
+      unit: poDefaultUnit(defaultType),
       unitCost: 0,
     });
     setOpen(false);
   };
 
+  const changeNewItemType = (nextType: string) => {
+    const cats = poCategoriesFor(nextType);
+    onUpdate({
+      newItemStockType: nextType,
+      newItemCategory: cats[0] || "",
+      unit: poDefaultUnit(nextType),
+    });
+  };
+
   const clear = () => {
-    onUpdate({ stockItemId: undefined, newItemName: undefined, description: "" });
+    onUpdate({
+      stockItemId: undefined,
+      newItemName: undefined,
+      newItemStockType: undefined,
+      newItemCategory: undefined,
+      description: "",
+    });
     setSearch("");
     setOpen(true);
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -1708,6 +1761,22 @@ function POLineEditor({
               onFocus={() => setOpen(true)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
             />
+            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+              {[{ value: "all", label: "All" }, ...PO_TYPE_OPTIONS].map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setTypeFilter(t.value)}
+                  className={`shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-full border transition-colors ${
+                    typeFilter === t.value
+                      ? "bg-orange-600 text-white border-orange-600"
+                      : "bg-white text-ink-600 border-ink-200 hover:bg-ink-50"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
             {open && (search.trim().length > 0 || filtered.length > 0) && (
               <div className="absolute z-20 mt-1 w-full rounded-lg border border-ink-200 bg-white shadow-lg overflow-hidden">
                 {filtered.map(s => (
@@ -1744,6 +1813,36 @@ function POLineEditor({
           </p>
         )}
       </div>
+
+      {/* Type + Category pickers when creating a new catalog item */}
+      {line.newItemName && !line.stockItemId && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Type</label>
+            <select
+              className="input"
+              value={line.newItemStockType || "sheet"}
+              onChange={(e) => changeNewItemType(e.target.value)}
+            >
+              {PO_TYPE_OPTIONS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Category</label>
+            <select
+              className="input"
+              value={line.newItemCategory || ""}
+              onChange={(e) => onUpdate({ newItemCategory: e.target.value })}
+            >
+              {poCategoriesFor(line.newItemStockType || "sheet").map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Qty / Unit / Cost */}
       <div className="grid grid-cols-3 gap-3">
@@ -1833,10 +1932,10 @@ function OrdersTab() {
             unit: l.unit || "Sheet",
             unit_cost: l.unitCost || 0,
             on_hand_qty: 0,
-            stockType: "sheet",
-            category: "",
+            stockType: l.newItemStockType || "sheet",
+            category: l.newItemCategory || "",
           });
-          return { ...l, stockItemId: created.id, newItemName: undefined };
+          return { ...l, stockItemId: created.id, newItemName: undefined, newItemStockType: undefined, newItemCategory: undefined };
         }
         return l;
       }));
